@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="@drawable/card_background"
+    android:padding="30dp"
+    android:layout_margin="8dp">
+
+    <!-- Иконка -->
+    <ImageView
+        android:id="@+id/motivationIcon"
+        android:layout_width="80dp"
+        android:layout_height="80dp"
+        android:layout_marginBottom="20dp"
+        android:src="@drawable/ic_memory" />
+
+    <!-- Заголовок - УВЕЛИЧИВАЕМ ШРИФТ -->
+    <TextView
+        android:id="@+id/motivationTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Сохраняй моменты"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:layout_marginBottom="10dp"
+        android:textColor="@color/black" />
+
+    <!-- Описание - УВЕЛИЧИВАЕМ ШРИФТ -->
+    <TextView
+        android:id="@+id/motivationDescription"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Записывай важные события"
+        android:textSize="18sp"
+        android:gravity="center"
+        android:textColor="@color/black"
+        android:lineSpacingExtra="4sp" />
+
+</LinearLayout>

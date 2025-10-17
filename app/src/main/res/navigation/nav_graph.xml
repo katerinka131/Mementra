@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/mapFragment">
+
+    <fragment
+        android:id="@+id/mapFragment"
+        android:name="com.example.mementra.fragments.MapFragment"
+        android:label="Карта"
+        tools:layout="@layout/fragment_map">
+
+        <action
+            android:id="@+id/action_to_diary"
+            app:destination="@id/diaryFragment" />
+
+        <action
+            android:id="@+id/action_to_favorites"
+            app:destination="@id/favoritesFragment" />
+
+        <action
+            android:id="@+id/action_to_settings"
+            app:destination="@id/settingsFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/diaryFragment"
+        android:name="com.example.mementra.fragments.DiaryFragment"
+        android:label="Дневник"
+        tools:layout="@layout/fragment_diary">
+
+        <action
+            android:id="@+id/action_diary_to_map"
+            app:destination="@id/mapFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/favoritesFragment"
+        android:name="com.example.mementra.fragments.FavoritesFragment"
+        android:label="Избранное"
+        tools:layout="@layout/fragment_favorites">
+
+        <action
+            android:id="@+id/action_favorites_to_map"
+            app:destination="@id/mapFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.example.mementra.fragments.SettingsFragment"
+        android:label="Настройки"
+        tools:layout="@layout/fragment_settings">
+
+        <action
+            android:id="@+id/action_settings_to_map"
+            app:destination="@id/mapFragment" />
+    </fragment>
+
+</navigation>
