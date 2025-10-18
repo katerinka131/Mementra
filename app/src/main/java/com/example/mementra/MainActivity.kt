@@ -21,6 +21,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Инициализация зависимостей
         userManager = UserManager(this)
         memoryRepository = MemoryPointRepository(AppDatabaseHelper(this))
 

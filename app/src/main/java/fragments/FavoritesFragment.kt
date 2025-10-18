@@ -4,20 +4,26 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.example.mementra.MainActivity
 import com.example.mementra.adapters.FavoritesAdapter
-import com.example.mementra.database.MemoryPointRepository
-import com.example.mementra.database.UserManager
 import com.example.mementra.databinding.FragmentFavoritesBinding
+import com.example.mementra.utils.MemoryDialogHelper
+import com.example.mementra.viewmodels.FavoritesUiState
+import com.example.mementra.viewmodels.FavoritesViewModel
+import com.example.mementra.viewmodels.FavoritesViewModelFactory
+import kotlinx.coroutines.launch
+import androidx.lifecycle.lifecycleScope
 
 class FavoritesFragment : Fragment() {
 
     private var _binding: FragmentFavoritesBinding? = null
     private val binding get() = _binding!!
-    private lateinit var memoryPointRepository: MemoryPointRepository
-    private lateinit var userManager: UserManager
-    private var currentUserId: String = ""
+    
+    private lateinit var viewModel: FavoritesViewModel
     private lateinit var favoritesAdapter: FavoritesAdapter
 
     override fun onCreateView(
@@ -27,9 +33,13 @@ class FavoritesFragment : Fragment() {
     ): View {
         _binding = FragmentFavoritesBinding.inflate(inflater, container, false)
 
-        userManager = UserManager(requireContext())
-        memoryPointRepository = MemoryPointRepository(com.example.mementra.database.AppDatabaseHelper(requireContext()))
-        currentUserId = userManager.getUserId()
+        // Инициализация ViewModel
+        val mainActivity = requireActivity() as MainActivity
+        val repository = mainActivity.memoryRepo
+        val userId = mainActivity.userId
+        
+        val factory = FavoritesViewModelFactory(repository, userId)
+        viewModel = ViewModelProvider(this, factory)[FavoritesViewModel::class.java]
 
         return binding.root
     }
@@ -37,12 +47,14 @@ class FavoritesFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         setupRecyclerView()
-        loadFavorites()
+        observeViewModel()
     }
 
+    /**
+     * Настройка RecyclerView
+     */
     private fun setupRecyclerView() {
         favoritesAdapter = FavoritesAdapter(emptyList()) { memory ->
-            // Обработчик клика по воспоминанию - открываем детали
             showMemoryDetails(memory.pointId)
         }
 
@@ -52,157 +64,103 @@ class FavoritesFragment : Fragment() {
         }
     }
 
-    private fun loadFavorites() {
-        try {
-            val favoritePoints = memoryPointRepository.getFavoriteMemoryPoints(currentUserId)
-
-            println("FAVORITES_DEBUG: Found ${favoritePoints.size} favorites")
-
-            if (favoritePoints.isEmpty()) {
+    /**
+     * Подписка на изменения ViewModel
+     */
+    private fun observeViewModel() {
+        // Наблюдаем за UI State
+        viewModel.uiState.observe(viewLifecycleOwner) { state ->
+            when (state) {
+                is FavoritesUiState.Idle -> {
+                    // Ничего не делаем
+                }
+                is FavoritesUiState.Loading -> {
+                    // Можно показать прогресс
+                    binding.favoritesPlaceholder.visibility = View.GONE
+                    binding.favoritesRecyclerView.visibility = View.GONE
+                }
+                is FavoritesUiState.Empty -> {
                 binding.favoritesPlaceholder.visibility = View.VISIBLE
                 binding.favoritesRecyclerView.visibility = View.GONE
-                binding.favoritesPlaceholderText.text = "❤️ Избранные воспоминания\n\nЗдесь будут ваши самые важные моменты\n\nПока нет избранных воспоминаний\n\nДобавьте воспоминания в избранное на карте!"
-            } else {
+                    binding.favoritesPlaceholderText.text = 
+                        "❤️ Избранные воспоминания\n\n" +
+                        "Здесь будут ваши самые важные моменты\n\n" +
+                        "Пока нет избранных воспоминаний\n\n" +
+                        "Добавьте воспоминания в избранное на карте!"
+                }
+                is FavoritesUiState.Success -> {
                 binding.favoritesPlaceholder.visibility = View.GONE
                 binding.favoritesRecyclerView.visibility = View.VISIBLE
-                favoritesAdapter.updateMemories(favoritePoints)
-
-                android.widget.Toast.makeText(
-                    requireContext(),
-                    "Загружено ${favoritePoints.size} избранных воспоминаний",
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
-            }
-        } catch (e: Exception) {
-            binding.favoritesPlaceholderText.text = "Ошибка загрузки избранных воспоминаний: ${e.message}"
-            e.printStackTrace()
-        }
-    }
-
-    private fun showMemoryDetails(memoryPointId: Long) {
-        // Используем тот же метод что и в MapFragment
-        // Нужно либо скопировать метод, либо вынести в общий класс
-
-        val memoryPoints = memoryPointRepository.getMemoryPoints(currentUserId)
-        val memoryPoint = memoryPoints.find { it.pointId == memoryPointId }
-
-        memoryPoint?.let { point ->
-            // Создаем диалог для просмотра воспоминания
-            // Можно скопировать код из MapFragment.showMemoryDetails()
-            // Или вынести в отдельную функцию/класс
-
-            showMemoryDetailsDialog(point)
-        }
-    }
-
-    private fun showMemoryDetailsDialog(memoryPoint: com.example.mementra.database.MemoryPoint) {
-        val entries = memoryPointRepository.getMemoryEntries(memoryPoint.pointId)
-
-        val dialogView = android.view.LayoutInflater.from(requireContext()).inflate(com.example.mementra.R.layout.bottom_sheet_memory_details, null)
-        val dialog = android.app.Dialog(requireContext())
-        dialog.setContentView(dialogView)
-
-        val window = dialog.window
-        window?.setGravity(android.view.Gravity.BOTTOM)
-        window?.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, (resources.displayMetrics.heightPixels * 0.8).toInt())
-        window?.setWindowAnimations(com.example.mementra.R.style.DialogAnimation)
-
-        // Находим все View с полными путями
-        val tvTitle = dialogView.findViewById<android.widget.TextView>(com.example.mementra.R.id.tvTitle)
-        val tvDescription = dialogView.findViewById<android.widget.TextView>(com.example.mementra.R.id.tvDescription)
-        val tvDate = dialogView.findViewById<android.widget.TextView>(com.example.mementra.R.id.tvDate)
-        val tvLocation = dialogView.findViewById<android.widget.TextView>(com.example.mementra.R.id.tvLocation)
-        val tvEntries = dialogView.findViewById<android.widget.TextView>(com.example.mementra.R.id.tvEntries)
-        val btnFavorite = dialogView.findViewById<android.widget.ImageButton>(com.example.mementra.R.id.btnFavorite)
-        val btnEdit = dialogView.findViewById<android.widget.Button>(com.example.mementra.R.id.btnEdit)
-        val btnDelete = dialogView.findViewById<android.widget.Button>(com.example.mementra.R.id.btnDelete)
-        val btnClose = dialogView.findViewById<android.widget.Button>(com.example.mementra.R.id.btnClose)
-
-        // Устанавливаем иконку избранного
-        if (memoryPoint.isFavorite) {
-            btnFavorite.setImageResource(com.example.mementra.R.drawable.ic_favorite_filled)
-        } else {
-            btnFavorite.setImageResource(com.example.mementra.R.drawable.ic_favorite_border)
-        }
-
-        // Обработчик для избранного
-        btnFavorite.setOnClickListener {
-            val newFavoriteState = !memoryPoint.isFavorite
-            val success = memoryPointRepository.toggleFavorite(memoryPoint.pointId, newFavoriteState)
-
-            if (success) {
-                val updatedPoint = memoryPoint.copy(isFavorite = newFavoriteState)
-
-                if (newFavoriteState) {
-                    btnFavorite.setImageResource(com.example.mementra.R.drawable.ic_favorite_filled)
-                    android.widget.Toast.makeText(requireContext(), "Добавлено в избранное", android.widget.Toast.LENGTH_SHORT).show()
-                } else {
-                    btnFavorite.setImageResource(com.example.mementra.R.drawable.ic_favorite_border)
-                    android.widget.Toast.makeText(requireContext(), "Убрано из избранного", android.widget.Toast.LENGTH_SHORT).show()
-                    // Обновляем список после удаления из избранного
-                    loadFavorites()
+                    favoritesAdapter.updateMemories(state.favorites)
+                }
+                is FavoritesUiState.Error -> {
+                    binding.favoritesPlaceholder.visibility = View.VISIBLE
+                    binding.favoritesRecyclerView.visibility = View.GONE
+                    binding.favoritesPlaceholderText.text = 
+                        "Ошибка загрузки избранных воспоминаний:\n${state.message}"
                 }
             }
         }
 
-        // Устанавливаем текст
-        tvTitle.text = memoryPoint.title
-        tvDescription.text = memoryPoint.description ?: "Нет описания"
-        tvDate.text = "Дата: ${java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(memoryPoint.visitDate))}"
-        tvLocation.text = "Координаты: ${"%.6f".format(memoryPoint.latitude)}, ${"%.6f".format(memoryPoint.longitude)}"
-
-        if (entries.isNotEmpty()) {
-            val entriesText = entries.joinToString("\n\n") { entry ->
-                when (entry.type) {
-                    "text" -> "📝 ${entry.content}"
-                    "photo" -> "📷 Фото: ${entry.content}"
-                    "voice" -> "🎤 Голосовая запись: ${entry.duration} сек"
-                    else -> "❓ Неизвестный тип"
-                }
+        // Наблюдаем за сообщениями
+        viewModel.message.observe(viewLifecycleOwner) { message ->
+            message?.let {
+                showMessage(it)
             }
-            tvEntries.text = entriesText
-        } else {
-            tvEntries.text = "Нет дополнительных записей"
         }
-
-        btnEdit.setOnClickListener {
-            dialog.dismiss()
-            android.widget.Toast.makeText(requireContext(), "Редактирование будет добавлено в обновлении", android.widget.Toast.LENGTH_SHORT).show()
-        }
-
-        btnDelete.setOnClickListener {
-            dialog.dismiss()
-            showDeleteConfirmationDialog(memoryPoint)
-        }
-
-        btnClose.setOnClickListener {
-            dialog.dismiss()
-        }
-
-        dialog.setCancelable(true)
-        dialog.show()
     }
 
-    private fun showDeleteConfirmationDialog(memoryPoint: com.example.mementra.database.MemoryPoint) {
-        android.app.AlertDialog.Builder(requireContext())
-            .setTitle("Удаление воспоминания")
-            .setMessage("Вы уверены, что хотите удалить воспоминание \"${memoryPoint.title}\"?")
-            .setPositiveButton("Удалить") { _, _ ->
-                val success = memoryPointRepository.deleteMemoryPoint(memoryPoint.pointId)
-                if (success) {
-                    android.widget.Toast.makeText(requireContext(), "Воспоминание удалено", android.widget.Toast.LENGTH_SHORT).show()
-                    loadFavorites() // Обновляем список
-                } else {
-                    android.widget.Toast.makeText(requireContext(), "Ошибка при удалении", android.widget.Toast.LENGTH_SHORT).show()
-                }
+    /**
+     * Показать детали воспоминания
+     */
+    private fun showMemoryDetails(pointId: Long) {
+        val memoryPoint = viewModel.getMemoryById(pointId) ?: return
+
+        // Получаем записи через MainActivity (можно улучшить)
+        val mainActivity = requireActivity() as MainActivity
+        val repository = mainActivity.memoryRepo
+        
+        // Используем lifecycleScope для получения записей
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val entries = repository.getMemoryEntries(pointId)
+                
+                MemoryDialogHelper.showMemoryDetailsDialog(
+                    context = requireContext(),
+                    memoryPoint = memoryPoint,
+                    entries = entries,
+                    onFavoriteToggle = { newState ->
+                        viewModel.toggleFavorite(pointId, !newState)
+                    },
+                    onEdit = {
+                        showMessage("Редактирование будет добавлено в обновлении")
+                    },
+                    onDelete = {
+                        MemoryDialogHelper.showDeleteConfirmationDialog(
+                            context = requireContext(),
+                            memoryTitle = memoryPoint.title,
+                            onConfirm = {
+                                viewModel.deleteMemory(pointId, memoryPoint.title)
+                            }
+                        )
+                    }
+                )
+            } catch (e: Exception) {
+                showMessage("Ошибка загрузки записей: ${e.message}")
             }
-            .setNegativeButton("Отмена", null)
-            .show()
+        }
+    }
+
+    /**
+     * Показать сообщение
+     */
+    private fun showMessage(message: String) {
+        Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
     }
 
     override fun onResume() {
         super.onResume()
-        loadFavorites()
+        viewModel.loadFavorites()
     }
 
     override fun onDestroyView() {
