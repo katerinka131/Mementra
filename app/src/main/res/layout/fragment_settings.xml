@@ -51,7 +51,7 @@
                 <ImageView
                     android:layout_width="24dp"
                     android:layout_height="24dp"
-                    android:src="@android:drawable/ic_menu_day"
+                    android:src="@drawable/ic_theme"
                     android:contentDescription="Тема" />
 
                 <LinearLayout
@@ -114,7 +114,7 @@
                 <ImageView
                     android:layout_width="24dp"
                     android:layout_height="24dp"
-                    android:src="@android:drawable/ic_popup_reminder"
+                    android:src="@drawable/ic_notifications"
                     android:contentDescription="Уведомления" />
 
                 <LinearLayout
@@ -179,7 +179,7 @@
                 <ImageView
                     android:layout_width="24dp"
                     android:layout_height="24dp"
-                    android:src="@android:drawable/ic_dialog_email"
+                    android:src="@drawable/ic_support"
                     android:contentDescription="Поддержка" />
 
                 <TextView
@@ -194,7 +194,7 @@
                 <ImageView
                     android:layout_width="16dp"
                     android:layout_height="16dp"
-                    android:src="@android:drawable/ic_menu_send"
+                    android:src="@drawable/ic_arrow_forward"
                     android:contentDescription="Открыть" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -221,7 +221,7 @@
                 <ImageView
                     android:layout_width="24dp"
                     android:layout_height="24dp"
-                    android:src="@android:drawable/ic_menu_share"
+                    android:src="@drawable/ic_share"
                     android:contentDescription="Поделиться" />
 
                 <TextView
@@ -236,7 +236,7 @@
                 <ImageView
                     android:layout_width="16dp"
                     android:layout_height="16dp"
-                    android:src="@android:drawable/ic_menu_send"
+                    android:src="@drawable/ic_arrow_forward"
                     android:contentDescription="Открыть" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -274,7 +274,7 @@
                 <ImageView
                     android:layout_width="24dp"
                     android:layout_height="24dp"
-                    android:src="@android:drawable/ic_menu_info_details"
+                    android:src="@drawable/ic_info"
                     android:contentDescription="Информация" />
 
                 <LinearLayout
@@ -302,7 +302,7 @@
                 <ImageView
                     android:layout_width="16dp"
                     android:layout_height="16dp"
-                    android:src="@android:drawable/ic_menu_send"
+                    android:src="@drawable/ic_arrow_forward"
                     android:contentDescription="Открыть" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
