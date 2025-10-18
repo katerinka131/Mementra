@@ -4,9 +4,10 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.mementra.database.MemoryEntry
-import com.example.mementra.database.MemoryPoint
 import com.example.mementra.database.MemoryPointRepository
+import com.example.mementra.database.models.MemoryEntry
+import com.example.mementra.database.models.MemoryPoint
+import com.example.mementra.utils.SingleLiveEvent
 import kotlinx.coroutines.launch
 import org.osmdroid.util.GeoPoint
 import timber.log.Timber
@@ -48,8 +49,8 @@ class MapViewModel(
     private val _memoryPoints = MutableLiveData<List<MemoryPoint>>(emptyList())
     val memoryPoints: LiveData<List<MemoryPoint>> = _memoryPoints
 
-    // События (одноразовые)
-    private val _events = MutableLiveData<MapEvent>()
+    // События (одноразовые) - используем SingleLiveEvent для предотвращения повторной отправки
+    private val _events = SingleLiveEvent<MapEvent>()
     val events: LiveData<MapEvent> = _events
 
     // Режим выбора точки

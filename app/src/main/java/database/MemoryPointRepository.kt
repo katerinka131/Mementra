@@ -2,30 +2,21 @@ package com.example.mementra.database
 
 import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
+import com.example.mementra.database.models.MemoryEntry
+import com.example.mementra.database.models.MemoryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-data class MemoryPoint(
-    val pointId: Long = 0,
-    val userId: String,
-    val title: String,
-    val description: String? = null,
-    val latitude: Double,
-    val longitude: Double,
-    val address: String? = null,
-    val visitDate: Long,
-    val isFavorite: Boolean = false
+/**
+ * @deprecated Этот класс устарел и будет удален в следующей версии.
+ * Используйте RoomMemoryRepository вместо этого.
+ * См. ROOM_MIGRATION_GUIDE.md для деталей миграции.
+ */
+@Deprecated(
+    message = "Используйте RoomMemoryRepository вместо MemoryPointRepository",
+    replaceWith = ReplaceWith("RoomMemoryRepository", "com.example.mementra.database.RoomMemoryRepository"),
+    level = DeprecationLevel.WARNING
 )
-
-data class MemoryEntry(
-    val entryId: Long = 0,
-    val memoryPointId: Long,
-    val type: String, // "text", "voice", "photo"
-    val content: String,
-    val duration: Long? = null,
-    val orderIndex: Int = 0
-)
-
 class MemoryPointRepository(private val databaseHelper: AppDatabaseHelper) {
 
     // Добавить точку памяти (асинхронно)

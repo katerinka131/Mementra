@@ -11,8 +11,8 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.TextView
 import com.example.mementra.R
-import com.example.mementra.database.MemoryEntry
-import com.example.mementra.database.MemoryPoint
+import com.example.mementra.database.models.MemoryEntry
+import com.example.mementra.database.models.MemoryPoint
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
 import java.text.SimpleDateFormat

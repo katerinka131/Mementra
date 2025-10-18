@@ -152,10 +152,13 @@ class FavoritesFragment : Fragment() {
     }
 
     /**
-     * Показать сообщение
+     * Показать сообщение (только для критических ошибок)
      */
     private fun showMessage(message: String) {
-        Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+        // Показываем только критические ошибки, убираем лишние уведомления
+        if (message.contains("Ошибка", ignoreCase = true)) {
+            Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onResume() {

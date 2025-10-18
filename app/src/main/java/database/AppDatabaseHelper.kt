@@ -6,11 +6,21 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.google.gson.Gson
 
+/**
+ * @deprecated Этот класс устарел и будет удален в следующей версии.
+ * Используйте AppDatabase (Room) вместо этого.
+ * См. ROOM_MIGRATION_GUIDE.md для деталей миграции.
+ */
+@Deprecated(
+    message = "Используйте AppDatabase (Room) вместо SQLiteOpenHelper",
+    replaceWith = ReplaceWith("AppDatabase", "com.example.mementra.database.AppDatabase"),
+    level = DeprecationLevel.WARNING
+)
 class AppDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
         private const val DATABASE_NAME = "mementra.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
 
         // Таблицы
         const val TABLE_USERS = "users"
@@ -43,6 +53,9 @@ class AppDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         const val COLUMN_CONTENT = "content"
         const val COLUMN_DURATION = "duration"
         const val COLUMN_ORDER_INDEX = "order_index"
+        const val COLUMN_FILE_PATH = "file_path"
+        const val COLUMN_FILE_SIZE = "file_size"
+        const val COLUMN_THUMBNAIL_PATH = "thumbnail_path"
 
         // Столбцы для tags
         const val COLUMN_TAG_ID = "tag_id"
@@ -90,6 +103,9 @@ class AppDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
                 $COLUMN_CREATED_AT INTEGER NOT NULL,
                 $COLUMN_DURATION INTEGER,
                 $COLUMN_ORDER_INDEX INTEGER DEFAULT 0,
+                $COLUMN_FILE_PATH TEXT,
+                $COLUMN_FILE_SIZE INTEGER,
+                $COLUMN_THUMBNAIL_PATH TEXT,
                 FOREIGN KEY ($COLUMN_MEMORY_POINT_ID) REFERENCES $TABLE_MEMORY_POINTS($COLUMN_POINT_ID)
             )
         """.trimIndent()

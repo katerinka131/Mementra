@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.ksp)
 }
 
 android {
@@ -62,6 +63,11 @@ dependencies {
     
     // Логирование
     implementation("com.jakewharton.timber:timber:5.0.1")
+    
+    // Room Database
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
     
     implementation(libs.androidx.appcompat)
     implementation(libs.material)

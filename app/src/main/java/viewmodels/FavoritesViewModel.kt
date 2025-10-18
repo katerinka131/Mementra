@@ -4,8 +4,9 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.mementra.database.MemoryPoint
 import com.example.mementra.database.MemoryPointRepository
+import com.example.mementra.database.models.MemoryPoint
+import com.example.mementra.utils.SingleLiveEvent
 import kotlinx.coroutines.launch
 
 /**
@@ -35,8 +36,8 @@ class FavoritesViewModel(
     private val _favoriteMemories = MutableLiveData<List<MemoryPoint>>(emptyList())
     val favoriteMemories: LiveData<List<MemoryPoint>> = _favoriteMemories
 
-    // Сообщения
-    private val _message = MutableLiveData<String>()
+    // Сообщения (одноразовые) - используем SingleLiveEvent для предотвращения повторной отправки
+    private val _message = SingleLiveEvent<String>()
     val message: LiveData<String> = _message
 
     init {
@@ -58,7 +59,6 @@ class FavoritesViewModel(
                     _uiState.value = FavoritesUiState.Empty
                 } else {
                     _uiState.value = FavoritesUiState.Success(favorites)
-                    _message.value = "Загружено ${favorites.size} избранных воспоминаний"
                 }
             } catch (e: Exception) {
                 _uiState.value = FavoritesUiState.Error("Ошибка загрузки: ${e.message}")
@@ -76,15 +76,8 @@ class FavoritesViewModel(
                 val success = repository.toggleFavorite(pointId, newState)
                 
                 if (success) {
-                    // Перезагружаем список
+                    // Перезагружаем список без уведомлений
                     loadFavorites()
-                    
-                    val msg = if (newState) {
-                        "Добавлено в избранное"
-                    } else {
-                        "Убрано из избранного"
-                    }
-                    _message.value = msg
                 } else {
                     _message.value = "Ошибка при обновлении избранного"
                 }
@@ -104,7 +97,7 @@ class FavoritesViewModel(
                 
                 if (success) {
                     loadFavorites()
-                    _message.value = "Воспоминание \"$title\" удалено"
+                    // Убрано уведомление об успешном удалении
                 } else {
                     _message.value = "Ошибка при удалении"
                 }

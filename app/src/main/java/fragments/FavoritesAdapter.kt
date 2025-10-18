@@ -6,7 +6,7 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.example.mementra.R
-import com.example.mementra.database.MemoryPoint
+import com.example.mementra.database.models.MemoryPoint
 import java.text.SimpleDateFormat
 import java.util.*
 

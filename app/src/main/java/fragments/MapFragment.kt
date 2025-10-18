@@ -13,6 +13,7 @@ import com.example.mementra.MainActivity
 import com.example.mementra.database.AppDatabaseHelper
 import com.example.mementra.database.MemoryPointRepository
 import com.example.mementra.database.UserManager
+import com.example.mementra.database.models.MemoryPoint
 import com.example.mementra.databinding.FragmentMapBinding
 import com.example.mementra.utils.MemoryDialogHelper
 import com.example.mementra.utils.PermissionHelper
@@ -302,7 +303,7 @@ class MapFragment : Fragment() {
     /**
      * Показать диалог редактирования воспоминания
      */
-    private fun showEditMemoryDialog(memoryPoint: com.example.mementra.database.MemoryPoint) {
+    private fun showEditMemoryDialog(memoryPoint: MemoryPoint) {
         MemoryDialogHelper.showEditMemoryDialog(
             context = requireContext(),
             memoryPoint = memoryPoint,
@@ -321,7 +322,7 @@ class MapFragment : Fragment() {
     /**
      * Обновить маркер на карте
      */
-    private fun updateMemoryMarker(memoryPoint: com.example.mementra.database.MemoryPoint) {
+    private fun updateMemoryMarker(memoryPoint: MemoryPoint) {
         val oldMarker = memoryMarkers[memoryPoint.pointId]
         oldMarker?.let { marker ->
             // Обновляем заголовок маркера

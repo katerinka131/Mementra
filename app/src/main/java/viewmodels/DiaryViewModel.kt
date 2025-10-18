@@ -4,8 +4,9 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.mementra.database.MemoryPoint
 import com.example.mementra.database.MemoryPointRepository
+import com.example.mementra.database.models.MemoryPoint
+import com.example.mementra.utils.SingleLiveEvent
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.*
@@ -61,8 +62,8 @@ class DiaryViewModel(
     private val _currentFilter = MutableLiveData(DiaryFilter())
     val currentFilter: LiveData<DiaryFilter> = _currentFilter
 
-    // Сообщения
-    private val _message = MutableLiveData<String>()
+    // Сообщения (одноразовые) - используем SingleLiveEvent для предотвращения повторной отправки
+    private val _message = SingleLiveEvent<String>()
     val message: LiveData<String> = _message
 
     init {
