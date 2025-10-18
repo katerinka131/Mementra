@@ -98,6 +98,11 @@ class OnboardingActivity : AppCompatActivity() {
 
     private fun setupButton() {
         binding.startButton.setOnClickListener {
+            // Сохраняем флаг, что onboarding был показан
+            val prefs = getSharedPreferences("mementra_prefs", MODE_PRIVATE)
+            prefs.edit().putBoolean("onboarding_completed", true).apply()
+            
+            // Переходим на главный экран
             startActivity(Intent(this, MainActivity::class.java))
             finish()
         }

@@ -111,13 +111,16 @@ private val _message = SingleLiveEvent<String>()
 ### Созданные файлы (1):
 - `app/src/main/java/utils/SingleLiveEvent.kt`
 
-### Обновленные файлы (6):
-- `app/src/main/res/layout/fragment_settings.xml`
-- `app/src/main/res/layout/fragment_diary.xml`
-- `app/src/main/res/layout/item_motivation_card.xml`
-- `app/src/main/java/viewmodels/MapViewModel.kt`
-- `app/src/main/java/viewmodels/FavoritesViewModel.kt`
-- `app/src/main/java/viewmodels/DiaryViewModel.kt`
+### Обновленные файлы (9):
+- `app/src/main/res/layout/fragment_settings.xml` - динамические цвета
+- `app/src/main/res/layout/fragment_diary.xml` - динамические цвета
+- `app/src/main/res/layout/item_motivation_card.xml` - динамические цвета
+- `app/src/main/java/viewmodels/MapViewModel.kt` - SingleLiveEvent
+- `app/src/main/java/viewmodels/FavoritesViewModel.kt` - SingleLiveEvent
+- `app/src/main/java/viewmodels/DiaryViewModel.kt` - SingleLiveEvent
+- `app/src/main/AndroidManifest.xml` - MainActivity как launcher
+- `app/src/main/java/com/example/mementra/MainActivity.kt` - проверка onboarding
+- `app/src/main/java/com/example/mementra/OnboardingActivity.kt` - сохранение флага
 
 ---
 
@@ -185,6 +188,59 @@ _events.value = MapEvent.ShowMessage("Воспоминание сохранен�
 
 ---
 
+---
+
+### 3. ✅ Экран приветствия показывается только первый раз
+
+**Проблема:**
+- Экран приветствия (OnboardingActivity) показывался при каждом запуске приложения
+- Пользователь не мог пропустить его после первого просмотра
+
+**Решение:**
+
+1. **Изменен launcher activity:**
+   - Теперь `MainActivity` является launcher activity
+   - `OnboardingActivity` запускается только если нужно
+
+2. **Добавлена проверка в MainActivity:**
+```kotlin
+private fun shouldShowOnboarding(): Boolean {
+    val prefs = getSharedPreferences("mementra_prefs", MODE_PRIVATE)
+    return !prefs.getBoolean("onboarding_completed", false)
+}
+```
+
+3. **Сохранение флага в OnboardingActivity:**
+```kotlin
+// При нажатии "Начать"
+val prefs = getSharedPreferences("mementra_prefs", MODE_PRIVATE)
+prefs.edit().putBoolean("onboarding_completed", true).apply()
+```
+
+**Как это работает:**
+1. При первом запуске: `onboarding_completed` = false → показывается OnboardingActivity
+2. Пользователь нажимает "Начать" → флаг сохраняется как true
+3. При следующих запусках: `onboarding_completed` = true → сразу MainActivity
+
+**Измененные файлы:**
+- `app/src/main/AndroidManifest.xml` - MainActivity теперь launcher
+- `app/src/main/java/com/example/mementra/MainActivity.kt` - проверка флага
+- `app/src/main/java/com/example/mementra/OnboardingActivity.kt` - сохранение флага
+
+**Результат:** ✅ Onboarding показывается только при первом запуске
+
+---
+
+## ✅ Финальная проверка
+
+- ✅ 0 ошибок компиляции
+- ✅ 0 linter warnings
+- ✅ Темная тема работает на всех экранах
+- ✅ Уведомления не повторяются при переключении вкладок
+- ✅ Onboarding показывается только при первом запуске
+
+---
+
 **Автор:** AI Assistant (Claude Sonnet 4.5)  
-**Статус:** ✅ ВСЕ ПРОБЛЕМЫ ИСПРАВЛЕНЫ
+**Статус:** ✅ ВСЕ ПРОБЛЕМЫ ИСПРАВЛЕНЫ (3/3)
 

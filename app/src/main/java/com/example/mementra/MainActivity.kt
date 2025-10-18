@@ -1,5 +1,6 @@
 package com.example.mementra
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.navigation.fragment.NavHostFragment
@@ -21,6 +22,12 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Проверяем, нужно ли показать onboarding
+        if (shouldShowOnboarding()) {
+            startOnboarding()
+            return
+        }
+
         // Инициализация зависимостей
         userManager = UserManager(this)
         memoryRepository = MemoryPointRepository(AppDatabaseHelper(this))
@@ -32,6 +39,23 @@ class MainActivity : AppCompatActivity() {
 
         // Обновляем время последней активности
         userManager.updateLastActive(userId)
+    }
+
+    /**
+     * Проверяет, нужно ли показать экран приветствия
+     */
+    private fun shouldShowOnboarding(): Boolean {
+        val prefs = getSharedPreferences("mementra_prefs", MODE_PRIVATE)
+        return !prefs.getBoolean("onboarding_completed", false)
+    }
+
+    /**
+     * Запускает экран приветствия
+     */
+    private fun startOnboarding() {
+        val intent = Intent(this, OnboardingActivity::class.java)
+        startActivity(intent)
+        finish()
     }
 
     private fun setupNavigation() {

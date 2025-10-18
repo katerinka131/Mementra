@@ -40,21 +40,21 @@
         android:theme="@style/Theme.Mementra"
         tools:targetApi="31">
 
-    <!-- Стартовая activity - Onboarding -->
+    <!-- Главная activity - теперь launcher -->
     <activity
-        android:name=".OnboardingActivity"
-        android:exported="true"
-        android:theme="@style/Theme.Mementra">
+        android:name=".MainActivity"
+        android:exported="true">
         <intent-filter>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
     </activity>
 
-    <!-- Главная activity -->
+    <!-- Onboarding activity - показывается только первый раз -->
     <activity
-        android:name=".MainActivity"
-        android:exported="false" />
+        android:name=".OnboardingActivity"
+        android:exported="false"
+        android:theme="@style/Theme.Mementra" />
 
     <!-- Мета-тег для OSMDroid -->
     <meta-data
