@@ -1,6 +1,7 @@
 package com.example.mementra
 
 import android.app.Application
+import androidx.appcompat.app.AppCompatDelegate
 import timber.log.Timber
 
 /**
@@ -10,6 +11,9 @@ class MementraApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        
+        // Применяем сохраненную тему при запуске приложения
+        applyTheme()
         
         // Инициализация Timber для логирования
         if (BuildConfig.DEBUG) {
@@ -21,6 +25,20 @@ class MementraApplication : Application() {
             // которое отправляет логи в аналитику (Firebase Crashlytics и т.д.)
             Timber.plant(ReleaseTree())
             Timber.i("Mementra Application started in RELEASE mode")
+        }
+    }
+    
+    /**
+     * Применить сохраненную тему
+     */
+    private fun applyTheme() {
+        val prefs = getSharedPreferences("mementra_settings", MODE_PRIVATE)
+        val isDarkMode = prefs.getBoolean("dark_mode", false)
+        
+        if (isDarkMode) {
+            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+        } else {
+            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
         }
     }
 

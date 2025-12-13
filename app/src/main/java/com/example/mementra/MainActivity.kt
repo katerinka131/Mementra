@@ -9,6 +9,7 @@ import com.example.mementra.database.AppDatabaseHelper
 import com.example.mementra.database.MemoryPointRepository
 import com.example.mementra.database.UserManager
 import com.example.mementra.databinding.ActivityMainBinding
+import com.example.mementra.utils.NotificationHelper
 
 class MainActivity : AppCompatActivity() {
 
@@ -36,6 +37,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         setupNavigation()
+        setupNotifications()
 
         // Обновляем время последней активности
         userManager.updateLastActive(userId)
@@ -68,5 +70,23 @@ class MainActivity : AppCompatActivity() {
 
         // Настраиваем нижнюю навигацию
         binding.bottomNavigation.setupWithNavController(navController)
+    }
+    
+    /**
+     * Настройка уведомлений при запуске приложения
+     */
+    private fun setupNotifications() {
+        // Создаем канал уведомлений
+        NotificationHelper.createNotificationChannel(this)
+        
+        // Если уведомления включены, планируем их
+        val prefs = getSharedPreferences("mementra_settings", MODE_PRIVATE)
+        val notificationsEnabled = prefs.getBoolean("notifications_enabled", true)
+        
+        if (notificationsEnabled) {
+            val hour = prefs.getInt("notification_hour", 20)
+            val minute = prefs.getInt("notification_minute", 0)
+            NotificationHelper.scheduleDailyNotification(this, hour, minute)
+        }
     }
 }

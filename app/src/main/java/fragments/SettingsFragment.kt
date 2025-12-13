@@ -1,17 +1,24 @@
 package com.example.mementra.fragments
 
+import android.Manifest
+import android.app.TimePickerDialog
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import com.example.mementra.R
 import com.example.mementra.databinding.FragmentSettingsBinding
+import com.example.mementra.utils.NotificationHelper
 
 class SettingsFragment : Fragment() {
 
@@ -19,6 +26,18 @@ class SettingsFragment : Fragment() {
     private val binding get() = _binding!!
     
     private lateinit var prefs: SharedPreferences
+    
+    // Launcher для запроса разрешения на уведомления
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            Toast.makeText(requireContext(), "Разрешение на уведомления получено", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(requireContext(), "Разрешение на уведомления отклонено", Toast.LENGTH_SHORT).show()
+            binding.notificationsSwitch.isChecked = false
+        }
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -29,6 +48,9 @@ class SettingsFragment : Fragment() {
         
         prefs = requireContext().getSharedPreferences("mementra_settings", android.content.Context.MODE_PRIVATE)
         
+        // Создать канал уведомлений
+        NotificationHelper.createNotificationChannel(requireContext())
+        
         return binding.root
     }
 
@@ -36,6 +58,7 @@ class SettingsFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         setupThemeSwitch()
         setupNotifications()
+        setupNotificationTime()
         setupSupport()
         setupShare()
         setupAbout()
@@ -80,11 +103,7 @@ class SettingsFragment : Fragment() {
             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
         }
         
-        Toast.makeText(
-            requireContext(),
-            "Тема изменена. Перезапустите приложение для полного применения.",
-            Toast.LENGTH_LONG
-        ).show()
+        // Тема применяется автоматически, перезапуск не требуется
     }
 
     /**
@@ -97,20 +116,105 @@ class SettingsFragment : Fragment() {
         
         // Обработчик
         binding.notificationsSwitch.setOnCheckedChangeListener { _, isChecked ->
-            prefs.edit().putBoolean("notifications_enabled", isChecked).apply()
-            
-            val message = if (isChecked) {
-                "Уведомления включены"
+            if (isChecked) {
+                // Проверяем разрешение на уведомления (Android 13+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    if (ContextCompat.checkSelfPermission(
+                            requireContext(),
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        // Запрашиваем разрешение
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        return@setOnCheckedChangeListener
+                    }
+                }
+                
+                // Включаем уведомления
+                prefs.edit().putBoolean("notifications_enabled", true).apply()
+                
+                // Запланировать уведомления с сохраненным временем
+                val hour = prefs.getInt("notification_hour", 20)
+                val minute = prefs.getInt("notification_minute", 0)
+                NotificationHelper.scheduleDailyNotification(requireContext(), hour, minute)
+                
+                Toast.makeText(requireContext(), "Уведомления включены", Toast.LENGTH_SHORT).show()
+                
+                // Показать блок выбора времени
+                binding.notificationTimeCard.visibility = View.VISIBLE
             } else {
-                "Уведомления отключены"
+                // Отключаем уведомления
+                prefs.edit().putBoolean("notifications_enabled", false).apply()
+                NotificationHelper.cancelDailyNotification(requireContext())
+                
+                Toast.makeText(requireContext(), "Уведомления отключены", Toast.LENGTH_SHORT).show()
+                
+                // Скрыть блок выбора времени
+                binding.notificationTimeCard.visibility = View.GONE
             }
-            Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
         }
         
         // Клик по всему блоку
         binding.notificationsLayout.setOnClickListener {
             binding.notificationsSwitch.isChecked = !binding.notificationsSwitch.isChecked
         }
+        
+        // Показать/скрыть блок выбора времени в зависимости от состояния
+        binding.notificationTimeCard.visibility = if (notificationsEnabled) View.VISIBLE else View.GONE
+    }
+    
+    /**
+     * Настройка времени уведомлений
+     */
+    private fun setupNotificationTime() {
+        // Загружаем сохраненное время
+        val hour = prefs.getInt("notification_hour", 20)
+        val minute = prefs.getInt("notification_minute", 0)
+        updateNotificationTimeText(hour, minute)
+        
+        // Обработчик клика
+        binding.notificationTimeLayout.setOnClickListener {
+            showTimePickerDialog(hour, minute)
+        }
+    }
+    
+    /**
+     * Показать диалог выбора времени
+     */
+    private fun showTimePickerDialog(currentHour: Int, currentMinute: Int) {
+        TimePickerDialog(
+            requireContext(),
+            { _, selectedHour, selectedMinute ->
+                // Сохраняем выбранное время
+                prefs.edit()
+                    .putInt("notification_hour", selectedHour)
+                    .putInt("notification_minute", selectedMinute)
+                    .apply()
+                
+                // Обновляем текст
+                updateNotificationTimeText(selectedHour, selectedMinute)
+                
+                // Если уведомления включены, перепланируем их
+                if (binding.notificationsSwitch.isChecked) {
+                    NotificationHelper.scheduleDailyNotification(requireContext(), selectedHour, selectedMinute)
+                    Toast.makeText(
+                        requireContext(),
+                        "Время уведомлений обновлено",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            },
+            currentHour,
+            currentMinute,
+            true // 24-часовой формат
+        ).show()
+    }
+    
+    /**
+     * Обновить текст времени уведомлений
+     */
+    private fun updateNotificationTimeText(hour: Int, minute: Int) {
+        binding.notificationTimeText.text = String.format("%02d:%02d", hour, minute)
     }
 
     /**
