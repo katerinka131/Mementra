@@ -83,7 +83,6 @@ class FavoritesFragment : Fragment() {
                 binding.favoritesPlaceholder.visibility = View.VISIBLE
                 binding.favoritesRecyclerView.visibility = View.GONE
                     binding.favoritesPlaceholderText.text = 
-                        "❤️ Избранные воспоминания\n\n" +
                         "Здесь будут ваши самые важные моменты\n\n" +
                         "Пока нет избранных воспоминаний\n\n" +
                         "Добавьте воспоминания в избранное на карте!"
@@ -133,7 +132,20 @@ class FavoritesFragment : Fragment() {
                         viewModel.toggleFavorite(pointId, !newState)
                     },
                     onEdit = {
-                        showMessage("Редактирование будет добавлено в обновлении")
+                        MemoryDialogHelper.showEditMemoryDialog(
+                            context = requireContext(),
+                            memoryPoint = memoryPoint,
+                            onSave = { title, description, emoji ->
+                                val updatedPoint = memoryPoint.copy(
+                                    title = title,
+                                    description = description,
+                                    emoji = emoji,
+                                    visitDate = System.currentTimeMillis()
+                                )
+                                viewModel.updateMemory(updatedPoint)
+                            },
+                            onCancel = {}
+                        )
                     },
                     onDelete = {
                         MemoryDialogHelper.showDeleteConfirmationDialog(

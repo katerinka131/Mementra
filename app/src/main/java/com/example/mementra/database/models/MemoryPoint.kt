@@ -12,6 +12,15 @@ data class MemoryPoint(
     val longitude: Double,
     val address: String? = null,
     val visitDate: Long,
-    val isFavorite: Boolean = false
-)
+    val isFavorite: Boolean = false,
+    val emoji: String = DEFAULT_EMOJI
+) {
+    companion object {
+        const val DEFAULT_EMOJI = "📍"
+        val EMOJI_OPTIONS = listOf(
+            "📍", "🏠", "🎵", "🍕", "❤️", "⭐", "🎓", "✈️", "🏖️", "🎉",
+            "☕", "🎭", "🌲", "🏔️", "🌊", "🎸", "📸", "🏃", "🛒", "💼"
+        )
+    }
+}
 

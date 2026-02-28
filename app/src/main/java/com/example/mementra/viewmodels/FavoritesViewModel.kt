@@ -107,6 +107,25 @@ class FavoritesViewModel(
         }
     }
 
+    fun updateMemory(memoryPoint: MemoryPoint) {
+        if (memoryPoint.title.isBlank()) {
+            _message.value = "Введите название воспоминания"
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val success = repository.updateMemoryPoint(memoryPoint)
+                if (success) {
+                    loadFavorites()
+                } else {
+                    _message.value = "Ошибка при обновлении"
+                }
+            } catch (e: Exception) {
+                _message.value = "Ошибка: ${e.message}"
+            }
+        }
+    }
+
     /**
      * Получить воспоминание по ID
      */

@@ -87,7 +87,8 @@ class MapViewModel(
         title: String,
         description: String,
         latitude: Double,
-        longitude: Double
+        longitude: Double,
+        emoji: String = MemoryPoint.DEFAULT_EMOJI
     ) {
         if (title.isBlank()) {
             Timber.w("Attempted to add memory point with blank title")
@@ -106,7 +107,8 @@ class MapViewModel(
                     description = description,
                     latitude = latitude,
                     longitude = longitude,
-                    visitDate = System.currentTimeMillis()
+                    visitDate = System.currentTimeMillis(),
+                    emoji = emoji
                 )
 
                 val pointId = repository.addMemoryPoint(memoryPoint)
@@ -234,6 +236,26 @@ class MapViewModel(
             } catch (e: Exception) {
                 _events.value = MapEvent.ShowMessage("Ошибка загрузки записей: ${e.message}")
                 callback(emptyList())
+            }
+        }
+    }
+
+    fun addMediaEntry(pointId: Long, type: String, filePath: String, fileSize: Long, duration: Long? = null) {
+        viewModelScope.launch {
+            try {
+                val entry = MemoryEntry(
+                    memoryPointId = pointId,
+                    type = type,
+                    content = filePath.substringAfterLast('/'),
+                    filePath = filePath,
+                    fileSize = fileSize,
+                    duration = duration
+                )
+                repository.addMemoryEntry(entry)
+                Timber.d("Media entry added: type=$type, pointId=$pointId")
+            } catch (e: Exception) {
+                Timber.e(e, "Error adding media entry")
+                _events.value = MapEvent.ShowMessage("Ошибка сохранения медиа: ${e.message}")
             }
         }
     }

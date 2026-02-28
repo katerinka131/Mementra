@@ -19,6 +19,7 @@ data class MemoryEntry(
         const val TYPE_TEXT = "text"
         const val TYPE_PHOTO = "photo"
         const val TYPE_AUDIO = "audio"
+        const val TYPE_VIDEO = "video"
     }
 }
 

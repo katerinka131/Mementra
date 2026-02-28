@@ -140,7 +140,6 @@ class DiaryFragment : Fragment() {
                     binding.diaryPlaceholder.visibility = View.VISIBLE
                     binding.diaryRecyclerView.visibility = View.GONE
                     binding.diaryPlaceholderText.text = 
-                        "📓 Дневник воспоминаний\n\n" +
                         "Здесь пока нет записей\n\n" +
                         "Добавьте воспоминания на карте!"
                 }
@@ -194,7 +193,20 @@ class DiaryFragment : Fragment() {
                         viewModel.toggleFavorite(pointId, !newState)
                     },
                     onEdit = {
-                        showMessage("Редактирование будет добавлено в обновлении")
+                        MemoryDialogHelper.showEditMemoryDialog(
+                            context = requireContext(),
+                            memoryPoint = memoryPoint,
+                            onSave = { title, description, emoji ->
+                                val updatedPoint = memoryPoint.copy(
+                                    title = title,
+                                    description = description,
+                                    emoji = emoji,
+                                    visitDate = System.currentTimeMillis()
+                                )
+                                viewModel.updateMemory(updatedPoint)
+                            },
+                            onCancel = {}
+                        )
                     },
                     onDelete = {
                         MemoryDialogHelper.showDeleteConfirmationDialog(

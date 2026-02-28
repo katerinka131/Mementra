@@ -1,9 +1,49 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
+
     <style name="Base.Theme.Mementra" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your light theme here. -->
-        <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="fontFamily">sans-serif</item>
+
+        <item name="textAppearanceHeadlineLarge">@style/Mementra.TextAppearance.HeadlineLarge</item>
+        <item name="textAppearanceHeadlineMedium">@style/Mementra.TextAppearance.HeadlineMedium</item>
+        <item name="textAppearanceTitleLarge">@style/Mementra.TextAppearance.TitleLarge</item>
+        <item name="textAppearanceTitleMedium">@style/Mementra.TextAppearance.TitleMedium</item>
+        <item name="textAppearanceBodyLarge">@style/Mementra.TextAppearance.BodyLarge</item>
+        <item name="textAppearanceBodyMedium">@style/Mementra.TextAppearance.BodyMedium</item>
     </style>
 
     <style name="Theme.Mementra" parent="Base.Theme.Mementra" />
+
+    <style name="Mementra.TextAppearance.HeadlineLarge" parent="TextAppearance.Material3.HeadlineLarge">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="Mementra.TextAppearance.HeadlineMedium" parent="TextAppearance.Material3.HeadlineMedium">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="Mementra.TextAppearance.TitleLarge" parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="Mementra.TextAppearance.TitleMedium" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="Mementra.TextAppearance.BodyLarge" parent="TextAppearance.Material3.BodyLarge">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="fontFamily">sans-serif</item>
+        <item name="android:letterSpacing">0.01</item>
+    </style>
+
+    <style name="Mementra.TextAppearance.BodyMedium" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="fontFamily">sans-serif</item>
+        <item name="android:letterSpacing">0.01</item>
+    </style>
+
 </resources>

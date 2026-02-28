@@ -1,10 +1,8 @@
 package com.example.mementra.database
 
-import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
-import com.google.gson.Gson
 
 /**
  * @deprecated Этот класс устарел и будет удален в следующей версии.
@@ -20,7 +18,7 @@ class AppDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
 
     companion object {
         private const val DATABASE_NAME = "mementra.db"
-        private const val DATABASE_VERSION = 2
+        private const val DATABASE_VERSION = 3
 
         // Таблицы
         const val TABLE_USERS = "users"
@@ -45,6 +43,7 @@ class AppDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         const val COLUMN_ADDRESS = "address"
         const val COLUMN_VISIT_DATE = "visit_date"
         const val COLUMN_IS_FAVORITE = "is_favorite"
+        const val COLUMN_EMOJI = "emoji"
 
         // Столбцы для memory_entries
         const val COLUMN_ENTRY_ID = "entry_id"
@@ -89,6 +88,7 @@ class AppDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
                 $COLUMN_CREATED_AT INTEGER NOT NULL,
                 $COLUMN_VISIT_DATE INTEGER NOT NULL,
                 $COLUMN_IS_FAVORITE INTEGER DEFAULT 0,
+                $COLUMN_EMOJI TEXT DEFAULT '📍',
                 FOREIGN KEY ($COLUMN_USER_ID) REFERENCES $TABLE_USERS($COLUMN_USER_ID)
             )
         """.trimIndent()
@@ -142,12 +142,8 @@ class AppDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // При обновлении версии базы данных
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_MEMORY_POINT_TAGS")
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_TAGS")
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_MEMORY_ENTRIES")
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_MEMORY_POINTS")
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_USERS")
-        onCreate(db)
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE $TABLE_MEMORY_POINTS ADD COLUMN $COLUMN_EMOJI TEXT DEFAULT '📍'")
+        }
     }
 }

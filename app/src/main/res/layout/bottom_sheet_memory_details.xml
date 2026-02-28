@@ -10,7 +10,6 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
-        <!-- Заголовок с иконкой избранного -->
         <RelativeLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -70,11 +69,13 @@
             android:textSize="14sp" />
 
         <TextView
+            android:id="@+id/tvEntriesLabel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Дополнительные записи:"
+            android:text="Медиа:"
             android:textStyle="bold"
-            android:layout_marginBottom="4dp" />
+            android:layout_marginBottom="8dp"
+            android:visibility="gone" />
 
         <TextView
             android:id="@+id/tvEntries"
@@ -82,7 +83,15 @@
             android:layout_height="wrap_content"
             android:textSize="14sp"
             android:lineSpacingExtra="4dp"
-            android:layout_marginBottom="24dp" />
+            android:layout_marginBottom="8dp"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/mediaContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="16dp" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -90,32 +99,33 @@
             android:orientation="horizontal"
             android:gravity="center">
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnEdit"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="8dp"
                 android:text="✏️ Редактировать"
-                android:backgroundTint="@android:color/holo_blue_light" />
+                style="@style/Widget.Material3.Button.OutlinedButton" />
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDelete"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginStart="8dp"
                 android:text="🗑️ Удалить"
-                android:backgroundTint="@android:color/holo_red_light" />
+                style="@style/Widget.Material3.Button.OutlinedButton" />
 
         </LinearLayout>
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnClose"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Закрыть"
-            android:layout_marginTop="8dp" />
+            android:layout_marginTop="8dp"
+            style="@style/Widget.Material3.Button.TextButton" />
 
     </LinearLayout>
 

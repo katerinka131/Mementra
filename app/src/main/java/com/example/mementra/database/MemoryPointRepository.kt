@@ -1,7 +1,7 @@
 package com.example.mementra.database
 
 import android.content.ContentValues
-import android.database.sqlite.SQLiteDatabase
+import android.database.Cursor
 import com.example.mementra.database.models.MemoryEntry
 import com.example.mementra.database.models.MemoryPoint
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +19,22 @@ import kotlinx.coroutines.withContext
 )
 class MemoryPointRepository(private val databaseHelper: AppDatabaseHelper) {
 
+    private fun cursorToMemoryPoint(cursor: Cursor): MemoryPoint {
+        val emojiIndex = cursor.getColumnIndex(AppDatabaseHelper.COLUMN_EMOJI)
+        return MemoryPoint(
+            pointId = cursor.getLong(cursor.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_POINT_ID)),
+            userId = cursor.getString(cursor.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_USER_ID)),
+            title = cursor.getString(cursor.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_TITLE)),
+            description = cursor.getString(cursor.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_DESCRIPTION)),
+            latitude = cursor.getDouble(cursor.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_LATITUDE)),
+            longitude = cursor.getDouble(cursor.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_LONGITUDE)),
+            address = cursor.getString(cursor.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_ADDRESS)),
+            visitDate = cursor.getLong(cursor.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_VISIT_DATE)),
+            isFavorite = cursor.getInt(cursor.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_IS_FAVORITE)) == 1,
+            emoji = if (emojiIndex >= 0 && !cursor.isNull(emojiIndex)) cursor.getString(emojiIndex) else MemoryPoint.DEFAULT_EMOJI
+        )
+    }
+
     // Добавить точку памяти (асинхронно)
     suspend fun addMemoryPoint(memoryPoint: MemoryPoint): Long = withContext(Dispatchers.IO) {
         val db = databaseHelper.writableDatabase
@@ -33,6 +49,7 @@ class MemoryPointRepository(private val databaseHelper: AppDatabaseHelper) {
                 put(AppDatabaseHelper.COLUMN_CREATED_AT, System.currentTimeMillis())
                 put(AppDatabaseHelper.COLUMN_VISIT_DATE, memoryPoint.visitDate)
                 put(AppDatabaseHelper.COLUMN_IS_FAVORITE, if (memoryPoint.isFavorite) 1 else 0)
+                put(AppDatabaseHelper.COLUMN_EMOJI, memoryPoint.emoji)
             }
             db.insert(AppDatabaseHelper.TABLE_MEMORY_POINTS, null, values)
         } finally {
@@ -57,18 +74,7 @@ class MemoryPointRepository(private val databaseHelper: AppDatabaseHelper) {
 
             cursor.use {
                 while (it.moveToNext()) {
-                    val point = MemoryPoint(
-                        pointId = it.getLong(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_POINT_ID)),
-                        userId = it.getString(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_USER_ID)),
-                        title = it.getString(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_TITLE)),
-                        description = it.getString(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_DESCRIPTION)),
-                        latitude = it.getDouble(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_LATITUDE)),
-                        longitude = it.getDouble(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_LONGITUDE)),
-                        address = it.getString(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_ADDRESS)),
-                        visitDate = it.getLong(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_VISIT_DATE)),
-                        isFavorite = it.getInt(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_IS_FAVORITE)) == 1
-                    )
-                    points.add(point)
+                    points.add(cursorToMemoryPoint(it))
                 }
             }
         } finally {
@@ -88,6 +94,9 @@ class MemoryPointRepository(private val databaseHelper: AppDatabaseHelper) {
                 put(AppDatabaseHelper.COLUMN_CREATED_AT, System.currentTimeMillis())
                 put(AppDatabaseHelper.COLUMN_DURATION, entry.duration)
                 put(AppDatabaseHelper.COLUMN_ORDER_INDEX, entry.orderIndex)
+                put(AppDatabaseHelper.COLUMN_FILE_PATH, entry.filePath)
+                put(AppDatabaseHelper.COLUMN_FILE_SIZE, entry.fileSize)
+                put(AppDatabaseHelper.COLUMN_THUMBNAIL_PATH, entry.thumbnailPath)
             }
             db.insert(AppDatabaseHelper.TABLE_MEMORY_ENTRIES, null, values)
         } finally {
@@ -133,6 +142,7 @@ class MemoryPointRepository(private val databaseHelper: AppDatabaseHelper) {
                 put(AppDatabaseHelper.COLUMN_DESCRIPTION, memoryPoint.description)
                 put(AppDatabaseHelper.COLUMN_VISIT_DATE, memoryPoint.visitDate)
                 put(AppDatabaseHelper.COLUMN_IS_FAVORITE, if (memoryPoint.isFavorite) 1 else 0)
+                put(AppDatabaseHelper.COLUMN_EMOJI, memoryPoint.emoji)
             }
 
             db.update(
@@ -163,18 +173,7 @@ class MemoryPointRepository(private val databaseHelper: AppDatabaseHelper) {
 
             cursor.use {
                 while (it.moveToNext()) {
-                    val point = MemoryPoint(
-                        pointId = it.getLong(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_POINT_ID)),
-                        userId = it.getString(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_USER_ID)),
-                        title = it.getString(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_TITLE)),
-                        description = it.getString(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_DESCRIPTION)),
-                        latitude = it.getDouble(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_LATITUDE)),
-                        longitude = it.getDouble(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_LONGITUDE)),
-                        address = it.getString(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_ADDRESS)),
-                        visitDate = it.getLong(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_VISIT_DATE)),
-                        isFavorite = it.getInt(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_IS_FAVORITE)) == 1
-                    )
-                    points.add(point)
+                    points.add(cursorToMemoryPoint(it))
                 }
             }
         } finally {
@@ -219,13 +218,20 @@ class MemoryPointRepository(private val databaseHelper: AppDatabaseHelper) {
 
             cursor.use {
                 while (it.moveToNext()) {
+                    val durationIdx = it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_DURATION)
+                    val filePathIdx = it.getColumnIndex(AppDatabaseHelper.COLUMN_FILE_PATH)
+                    val fileSizeIdx = it.getColumnIndex(AppDatabaseHelper.COLUMN_FILE_SIZE)
+                    val thumbIdx = it.getColumnIndex(AppDatabaseHelper.COLUMN_THUMBNAIL_PATH)
                     val entry = MemoryEntry(
                         entryId = it.getLong(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_ENTRY_ID)),
                         memoryPointId = it.getLong(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_MEMORY_POINT_ID)),
                         type = it.getString(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_TYPE)),
                         content = it.getString(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_CONTENT)),
-                        duration = it.getLong(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_DURATION)),
-                        orderIndex = it.getInt(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_ORDER_INDEX))
+                        duration = if (it.isNull(durationIdx)) null else it.getLong(durationIdx),
+                        orderIndex = it.getInt(it.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_ORDER_INDEX)),
+                        filePath = if (filePathIdx >= 0 && !it.isNull(filePathIdx)) it.getString(filePathIdx) else null,
+                        fileSize = if (fileSizeIdx >= 0 && !it.isNull(fileSizeIdx)) it.getLong(fileSizeIdx) else null,
+                        thumbnailPath = if (thumbIdx >= 0 && !it.isNull(thumbIdx)) it.getString(thumbIdx) else null
                     )
                     entries.add(entry)
                 }
