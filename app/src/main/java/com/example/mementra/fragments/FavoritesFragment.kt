@@ -1,30 +1,100 @@
 package com.example.mementra.fragments
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.MediaStore
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.mementra.MainActivity
 import com.example.mementra.adapters.FavoritesAdapter
+import com.example.mementra.database.models.MemoryEntry
+import com.example.mementra.database.models.MemoryPoint
 import com.example.mementra.databinding.FragmentFavoritesBinding
 import com.example.mementra.utils.MemoryDialogHelper
+import com.example.mementra.utils.PermissionHelper
 import com.example.mementra.viewmodels.FavoritesUiState
 import com.example.mementra.viewmodels.FavoritesViewModel
 import com.example.mementra.viewmodels.FavoritesViewModelFactory
 import kotlinx.coroutines.launch
 import androidx.lifecycle.lifecycleScope
+import timber.log.Timber
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.*
+
+private data class FavoritesPendingMedia(
+    val filePath: String,
+    val type: String,
+    val fileSize: Long,
+    val duration: Long? = null
+)
 
 class FavoritesFragment : Fragment() {
 
     private var _binding: FragmentFavoritesBinding? = null
     private val binding get() = _binding!!
-    
+
     private lateinit var viewModel: FavoritesViewModel
     private lateinit var favoritesAdapter: FavoritesAdapter
+
+    private val pendingMedia = mutableListOf<FavoritesPendingMedia>()
+    private var editingPointId: Long? = null
+
+    private var cameraPhotoUri: Uri? = null
+    private var cameraPhotoFile: File? = null
+    private var cameraVideoUri: Uri? = null
+    private var cameraVideoFile: File? = null
+
+    // --- Activity Result Launchers ---
+
+    private val pickImage = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            handleMultipleUris(result.data, MemoryEntry.TYPE_PHOTO, ".jpg")
+        }
+    }
+
+    private val takePhoto = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) {
+            cameraPhotoFile?.let { file ->
+                if (file.exists() && file.length() > 0) {
+                    handleCameraFile(file, MemoryEntry.TYPE_PHOTO)
+                }
+            }
+        }
+    }
+
+    private val pickAudio = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            handleMultipleUris(result.data, MemoryEntry.TYPE_AUDIO, ".m4a")
+        }
+    }
+
+    private val pickVideo = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            handleMultipleUris(result.data, MemoryEntry.TYPE_VIDEO, ".mp4")
+        }
+    }
+
+    private val captureVideo = registerForActivityResult(ActivityResultContracts.CaptureVideo()) { success ->
+        if (success) {
+            cameraVideoFile?.let { file ->
+                if (file.exists() && file.length() > 0) {
+                    handleCameraFile(file, MemoryEntry.TYPE_VIDEO)
+                } else {
+                    showMessage("Видео не сохранено")
+                }
+            }
+        }
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -33,11 +103,10 @@ class FavoritesFragment : Fragment() {
     ): View {
         _binding = FragmentFavoritesBinding.inflate(inflater, container, false)
 
-        // Инициализация ViewModel
         val mainActivity = requireActivity() as MainActivity
         val repository = mainActivity.memoryRepo
         val userId = mainActivity.userId
-        
+
         val factory = FavoritesViewModelFactory(repository, userId)
         viewModel = ViewModelProvider(this, factory)[FavoritesViewModel::class.java]
 
@@ -50,9 +119,6 @@ class FavoritesFragment : Fragment() {
         observeViewModel()
     }
 
-    /**
-     * Настройка RecyclerView
-     */
     private fun setupRecyclerView() {
         favoritesAdapter = FavoritesAdapter(emptyList()) { memory ->
             showMemoryDetails(memory.pointId)
@@ -64,66 +130,48 @@ class FavoritesFragment : Fragment() {
         }
     }
 
-    /**
-     * Подписка на изменения ViewModel
-     */
     private fun observeViewModel() {
-        // Наблюдаем за UI State
         viewModel.uiState.observe(viewLifecycleOwner) { state ->
             when (state) {
-                is FavoritesUiState.Idle -> {
-                    // Ничего не делаем
-                }
+                is FavoritesUiState.Idle -> {}
                 is FavoritesUiState.Loading -> {
-                    // Можно показать прогресс
                     binding.favoritesPlaceholder.visibility = View.GONE
                     binding.favoritesRecyclerView.visibility = View.GONE
                 }
                 is FavoritesUiState.Empty -> {
-                binding.favoritesPlaceholder.visibility = View.VISIBLE
-                binding.favoritesRecyclerView.visibility = View.GONE
-                    binding.favoritesPlaceholderText.text = 
-                        "Здесь будут ваши самые важные моменты\n\n" +
-                        "Пока нет избранных воспоминаний\n\n" +
-                        "Добавьте воспоминания в избранное на карте!"
+                    binding.favoritesPlaceholder.visibility = View.VISIBLE
+                    binding.favoritesRecyclerView.visibility = View.GONE
+                    binding.favoritesPlaceholderText.text =
+                        "Здесь будут ваши самые важные моменты\n\nПока нет избранных воспоминаний\n\nДобавьте воспоминания в избранное на карте!"
                 }
                 is FavoritesUiState.Success -> {
-                binding.favoritesPlaceholder.visibility = View.GONE
-                binding.favoritesRecyclerView.visibility = View.VISIBLE
+                    binding.favoritesPlaceholder.visibility = View.GONE
+                    binding.favoritesRecyclerView.visibility = View.VISIBLE
                     favoritesAdapter.updateMemories(state.favorites)
                 }
                 is FavoritesUiState.Error -> {
                     binding.favoritesPlaceholder.visibility = View.VISIBLE
                     binding.favoritesRecyclerView.visibility = View.GONE
-                    binding.favoritesPlaceholderText.text = 
+                    binding.favoritesPlaceholderText.text =
                         "Ошибка загрузки избранных воспоминаний:\n${state.message}"
                 }
             }
         }
 
-        // Наблюдаем за сообщениями
         viewModel.message.observe(viewLifecycleOwner) { message ->
-            message?.let {
-                showMessage(it)
-            }
+            message?.let { showMessage(it) }
         }
     }
 
-    /**
-     * Показать детали воспоминания
-     */
     private fun showMemoryDetails(pointId: Long) {
         val memoryPoint = viewModel.getMemoryById(pointId) ?: return
-
-        // Получаем записи через MainActivity (можно улучшить)
         val mainActivity = requireActivity() as MainActivity
         val repository = mainActivity.memoryRepo
-        
-        // Используем lifecycleScope для получения записей
+
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val entries = repository.getMemoryEntries(pointId)
-                
+
                 MemoryDialogHelper.showMemoryDetailsDialog(
                     context = requireContext(),
                     memoryPoint = memoryPoint,
@@ -131,29 +179,12 @@ class FavoritesFragment : Fragment() {
                     onFavoriteToggle = { newState ->
                         viewModel.toggleFavorite(pointId, !newState)
                     },
-                    onEdit = {
-                        MemoryDialogHelper.showEditMemoryDialog(
-                            context = requireContext(),
-                            memoryPoint = memoryPoint,
-                            onSave = { title, description, emoji ->
-                                val updatedPoint = memoryPoint.copy(
-                                    title = title,
-                                    description = description,
-                                    emoji = emoji,
-                                    visitDate = System.currentTimeMillis()
-                                )
-                                viewModel.updateMemory(updatedPoint)
-                            },
-                            onCancel = {}
-                        )
-                    },
+                    onEdit = { showEditMemoryDialog(memoryPoint) },
                     onDelete = {
                         MemoryDialogHelper.showDeleteConfirmationDialog(
                             context = requireContext(),
                             memoryTitle = memoryPoint.title,
-                            onConfirm = {
-                                viewModel.deleteMemory(pointId, memoryPoint.title)
-                            }
+                            onConfirm = { viewModel.deleteMemory(pointId, memoryPoint.title) }
                         )
                     }
                 )
@@ -163,14 +194,206 @@ class FavoritesFragment : Fragment() {
         }
     }
 
-    /**
-     * Показать сообщение (только для критических ошибок)
-     */
-    private fun showMessage(message: String) {
-        // Показываем только критические ошибки, убираем лишние уведомления
-        if (message.contains("Ошибка", ignoreCase = true)) {
-            Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+    private fun showEditMemoryDialog(memoryPoint: MemoryPoint) {
+        editingPointId = memoryPoint.pointId
+        pendingMedia.clear()
+
+        MemoryDialogHelper.showEditMemoryDialog(
+            context = requireContext(),
+            memoryPoint = memoryPoint,
+            onSave = { title, description, emoji ->
+                val updatedPoint = memoryPoint.copy(
+                    title = title,
+                    description = description,
+                    emoji = emoji,
+                    visitDate = System.currentTimeMillis()
+                )
+                viewModel.updateMemory(updatedPoint)
+                savePendingMedia(memoryPoint.pointId)
+                editingPointId = null
+            },
+            onCancel = {
+                pendingMedia.clear()
+                editingPointId = null
+            },
+            onAddPhoto = { showPhotoOptions() },
+            onAddVoice = { showAudioOptions() },
+            onAddVideo = { showVideoOptions() }
+        )
+    }
+
+    private fun savePendingMedia(pointId: Long) {
+        if (pendingMedia.isEmpty()) return
+        val mainActivity = requireActivity() as MainActivity
+        val repository = mainActivity.memoryRepo
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                for (media in pendingMedia) {
+                    val entry = MemoryEntry(
+                        memoryPointId = pointId,
+                        type = media.type,
+                        content = media.filePath.substringAfterLast('/'),
+                        filePath = media.filePath,
+                        fileSize = media.fileSize,
+                        duration = media.duration
+                    )
+                    repository.addMemoryEntry(entry)
+                }
+                pendingMedia.clear()
+                viewModel.loadFavorites() // Обновляем список, чтобы увидеть новые медиа
+            } catch (e: Exception) {
+                Timber.e(e, "Error saving pending media")
+                viewModel.loadFavorites()
+            }
         }
+    }
+
+    // --- Photo ---
+    private fun showPhotoOptions() {
+        val options = arrayOf("Выбрать из галереи", "Сделать фото")
+        android.app.AlertDialog.Builder(requireContext())
+            .setTitle("Добавить фото")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> PermissionHelper.requestStoragePermission(this, { openImagePicker() }, { showMessage("Нужен доступ к галерее") })
+                    1 -> PermissionHelper.requestCameraPermission(this, { launchCamera() }, { showMessage("Нужен доступ к камере") })
+                }
+            }.show()
+    }
+
+    private fun openImagePicker() {
+        val intent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply {
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        pickImage.launch(intent)
+    }
+
+    private fun launchCamera() {
+        try {
+            val file = createMediaFile("IMG", ".jpg")
+            cameraPhotoFile = file
+            cameraPhotoUri = FileProvider.getUriForFile(requireContext(), "${requireContext().packageName}.provider", file)
+            takePhoto.launch(cameraPhotoUri)
+        } catch (e: Exception) {
+            showMessage("Ошибка камеры: ${e.message}")
+        }
+    }
+
+    // --- Audio ---
+    private fun showAudioOptions() {
+        val options = arrayOf("Записать аудио", "Выбрать аудио файл")
+        android.app.AlertDialog.Builder(requireContext())
+            .setTitle("Добавить аудио")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> PermissionHelper.requestAudioPermission(this, { startAudioRecording() }, { showMessage("Нужен микрофон") })
+                    1 -> openAudioPicker()
+                }
+            }.show()
+    }
+
+    private fun startAudioRecording() {
+        AudioRecordDialog.show(requireContext()) { filePath, durationSec ->
+            val file = File(filePath)
+            if (file.exists()) {
+                pendingMedia.add(FavoritesPendingMedia(filePath, MemoryEntry.TYPE_AUDIO, file.length(), durationSec))
+                showMessage("Аудио добавлено")
+            }
+        }
+    }
+
+    private fun openAudioPicker() {
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "audio/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        pickAudio.launch(intent)
+    }
+
+    // --- Video ---
+    private fun showVideoOptions() {
+        val options = arrayOf("Записать видео", "Выбрать из галереи")
+        android.app.AlertDialog.Builder(requireContext())
+            .setTitle("Добавить видео")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> PermissionHelper.requestCameraPermission(this, { launchVideoCapture() }, { showMessage("Нужен доступ к камере") })
+                    1 -> PermissionHelper.requestStoragePermission(this, { openVideoPicker() }, { showMessage("Нужен доступ к галерее") })
+                }
+            }.show()
+    }
+
+    private fun launchVideoCapture() {
+        try {
+            val file = createMediaFile("VID", ".mp4")
+            cameraVideoFile = file
+            cameraVideoUri = FileProvider.getUriForFile(requireContext(), "${requireContext().packageName}.provider", file)
+            captureVideo.launch(cameraVideoUri)
+        } catch (e: Exception) {
+            showMessage("Ошибка видео: ${e.message}")
+        }
+    }
+
+    private fun openVideoPicker() {
+        val intent = Intent(Intent.ACTION_PICK, MediaStore.Video.Media.EXTERNAL_CONTENT_URI).apply {
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        pickVideo.launch(intent)
+    }
+
+    // --- Handling Results ---
+    private fun handleMultipleUris(data: Intent?, type: String, ext: String) {
+        if (data == null) return
+        val uris = mutableListOf<Uri>()
+        data.clipData?.let { clip -> for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri) }
+        if (uris.isEmpty()) data.data?.let { uris.add(it) }
+        for (uri in uris) handleMediaResult(uri, type, ext)
+    }
+
+    private fun handleCameraFile(file: File, type: String) {
+        pendingMedia.add(FavoritesPendingMedia(file.absolutePath, type, file.length()))
+        showMessage("${mediaTypeName(type)} добавлено")
+    }
+
+    private fun handleMediaResult(uri: Uri, type: String, ext: String) {
+        try {
+            val file = copyUriToFile(uri, type.uppercase(), ext)
+            if (file != null && file.exists()) {
+                pendingMedia.add(FavoritesPendingMedia(file.absolutePath, type, file.length()))
+                showMessage("${mediaTypeName(type)} добавлено")
+            }
+        } catch (e: Exception) {
+            Timber.e(e)
+        }
+    }
+
+    private fun copyUriToFile(uri: Uri, prefix: String, ext: String): File? {
+        return try {
+            val file = createMediaFile(prefix, ext)
+            requireContext().contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(file).use { output -> input.copyTo(output) }
+            }
+            if (file.length() > 0) file else null
+        } catch (e: Exception) { null }
+    }
+
+    private fun createMediaFile(prefix: String, ext: String): File {
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.getDefault()).format(Date())
+        val dir = File(requireContext().filesDir, "media")
+        if (!dir.exists()) dir.mkdirs()
+        return File(dir, "${prefix}_${timestamp}${ext}")
+    }
+
+    private fun mediaTypeName(type: String): String = when (type) {
+        MemoryEntry.TYPE_PHOTO -> "Фото"
+        MemoryEntry.TYPE_AUDIO -> "Аудио"
+        MemoryEntry.TYPE_VIDEO -> "Видео"
+        else -> "Файл"
+    }
+
+    private fun showMessage(message: String) {
+        Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
     }
 
     override fun onResume() {

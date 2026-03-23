@@ -578,6 +578,7 @@ class MapFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         mapView.onResume()
+        viewModel.loadMemoryPoints()
     }
 
     override fun onPause() {
