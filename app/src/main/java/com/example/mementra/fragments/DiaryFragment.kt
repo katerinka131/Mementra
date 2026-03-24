@@ -13,6 +13,7 @@ import androidx.appcompat.widget.SearchView
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.mementra.MainActivity
 import com.example.mementra.adapters.FavoritesAdapter
@@ -25,8 +26,9 @@ import com.example.mementra.viewmodels.DiaryUiState
 import com.example.mementra.viewmodels.DiaryViewModel
 import com.example.mementra.viewmodels.DiaryViewModelFactory
 import com.example.mementra.viewmodels.SortType
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
 import java.io.FileOutputStream
@@ -50,6 +52,7 @@ class DiaryFragment : Fragment() {
 
     private val pendingMedia = mutableListOf<DiaryPendingMedia>()
     private var editingPointId: Long? = null
+    private var isSaving = false
 
     private var cameraPhotoUri: Uri? = null
     private var cameraPhotoFile: File? = null
@@ -67,9 +70,14 @@ class DiaryFragment : Fragment() {
     private val takePhoto = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success) {
             cameraPhotoFile?.let { file ->
-                if (file.exists() && file.length() > 0) {
-                    handleCameraFile(file, MemoryEntry.TYPE_PHOTO)
-                }
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    if (file.exists() && file.length() > 1024) {
+                        handleCameraFile(file, MemoryEntry.TYPE_PHOTO)
+                    } else {
+                        showMessage("Фото не сохранено или файл поврежден")
+                        if (file.exists() && file.length() == 0L) file.delete()
+                    }
+                }, 500)
             }
         }
     }
@@ -89,11 +97,14 @@ class DiaryFragment : Fragment() {
     private val captureVideo = registerForActivityResult(ActivityResultContracts.CaptureVideo()) { success ->
         if (success) {
             cameraVideoFile?.let { file ->
-                if (file.exists() && file.length() > 0) {
-                    handleCameraFile(file, MemoryEntry.TYPE_VIDEO)
-                } else {
-                    showMessage("Видео не сохранено")
-                }
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    if (file.exists() && file.length() > 1024) {
+                        handleCameraFile(file, MemoryEntry.TYPE_VIDEO)
+                    } else {
+                        showMessage("Видео не сохранено или файл поврежден")
+                        if (file.exists() && file.length() == 0L) file.delete()
+                    }
+                }, 500)
             }
         }
     }
@@ -244,6 +255,7 @@ class DiaryFragment : Fragment() {
     private fun showEditMemoryDialog(memoryPoint: MemoryPoint) {
         editingPointId = memoryPoint.pointId
         pendingMedia.clear()
+        isSaving = false
 
         MemoryDialogHelper.showEditMemoryDialog(
             context = requireContext(),
@@ -256,7 +268,7 @@ class DiaryFragment : Fragment() {
                     visitDate = System.currentTimeMillis()
                 )
                 viewModel.updateMemory(updatedPoint)
-                savePendingMedia(memoryPoint.pointId)
+                savePendingMediaSequentially(memoryPoint.pointId)
                 editingPointId = null
             },
             onCancel = {
@@ -269,36 +281,62 @@ class DiaryFragment : Fragment() {
         )
     }
 
-    private fun savePendingMedia(pointId: Long) {
+    private fun savePendingMediaSequentially(pointId: Long) {
         if (pendingMedia.isEmpty()) return
-        val mainActivity = requireActivity() as MainActivity
-        val repository = mainActivity.memoryRepo
 
-        viewLifecycleOwner.lifecycleScope.launch {
+        isSaving = true
+
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             try {
+                val mainActivity = requireActivity() as MainActivity
+                val repository = mainActivity.memoryRepo
+
+                var savedCount = 0
                 for (media in pendingMedia) {
-                    val entry = MemoryEntry(
-                        memoryPointId = pointId,
-                        type = media.type,
-                        content = media.filePath.substringAfterLast('/'),
-                        filePath = media.filePath,
-                        fileSize = media.fileSize,
-                        duration = media.duration
-                    )
-                    repository.addMemoryEntry(entry)
+                    val file = File(media.filePath)
+                    if (file.exists() && file.length() > 1024) {
+                        val entry = MemoryEntry(
+                            memoryPointId = pointId,
+                            type = media.type,
+                            content = file.name,
+                            filePath = media.filePath,
+                            fileSize = file.length(),
+                            duration = media.duration,
+                            orderIndex = savedCount,
+                            entryId = 0,
+                            thumbnailPath = null
+                        )
+                        repository.addMemoryEntry(entry)
+                        savedCount++
+
+                        withContext(Dispatchers.Main) {
+                            showMessage("${mediaTypeName(media.type)} добавлено")
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            showMessage("Файл ${mediaTypeName(media.type)} поврежден и не добавлен")
+                        }
+                        if (file.exists()) file.delete()
+                    }
                 }
                 pendingMedia.clear()
 
-                // КРИТИЧЕСКИ ВАЖНО: Просим ViewModel обновить список
-                // Это уберет состояние "Ошибка" и покажет актуальные данные
-                viewModel.loadMemories()
-
-                Timber.d("Saved pending media and refreshed diary for pointId=$pointId")
+                withContext(Dispatchers.Main) {
+                    if (savedCount > 0) {
+                        showMessage("Сохранено $savedCount файлов")
+                    }
+                    Timber.d("Saved pending media and refreshed diary for pointId=$pointId")
+                    viewModel.loadMemories()
+                }
             } catch (e: Exception) {
                 Timber.e(e, "Error saving pending media")
-                showMessage("Ошибка при сохранении файлов: ${e.message}")
-                // Даже если была ошибка, пробуем обновить UI
-                viewModel.loadMemories()
+                withContext(Dispatchers.Main) {
+                    showMessage("Ошибка при сохранении: ${e.message}")
+                    pendingMedia.clear()
+                    viewModel.loadMemories()
+                }
+            } finally {
+                isSaving = false
             }
         }
     }
@@ -369,12 +407,39 @@ class DiaryFragment : Fragment() {
     }
 
     private fun startAudioRecording() {
-        // Вызов AudioRecordDialog без лишних импортов, так как он в этом же пакете
         AudioRecordDialog.show(requireContext()) { filePath, durationSec ->
             val file = File(filePath)
-            if (file.exists()) {
-                pendingMedia.add(DiaryPendingMedia(filePath, MemoryEntry.TYPE_AUDIO, file.length(), durationSec))
-                showMessage("Аудио добавлено")
+            if (file.exists() && file.length() > 1024) {
+                val pointId = editingPointId
+                if (pointId != null) {
+                    // Режим редактирования - сохраняем сразу через репозиторий
+                    val mainActivity = requireActivity() as MainActivity
+                    val entry = MemoryEntry(
+                        memoryPointId = pointId,
+                        type = MemoryEntry.TYPE_AUDIO,
+                        content = file.name,
+                        filePath = filePath,
+                        fileSize = file.length(),
+                        duration = durationSec,
+                        orderIndex = 0,
+                        entryId = 0,
+                        thumbnailPath = null
+                    )
+                    viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                        mainActivity.memoryRepo.addMemoryEntry(entry)
+                        withContext(Dispatchers.Main) {
+                            showMessage("Аудио сохранено")
+                            viewModel.loadMemories()
+                        }
+                    }
+                } else {
+                    // Режим создания - добавляем в pending
+                    pendingMedia.add(DiaryPendingMedia(filePath, MemoryEntry.TYPE_AUDIO, file.length(), durationSec))
+                    showMessage("Аудио добавлено")
+                }
+            } else {
+                showMessage("Аудио не сохранено или файл поврежден")
+                if (file.exists() && file.length() == 0L) file.delete()
             }
         }
     }
@@ -447,19 +512,76 @@ class DiaryFragment : Fragment() {
     }
 
     private fun handleCameraFile(file: File, type: String) {
-        pendingMedia.add(DiaryPendingMedia(file.absolutePath, type, file.length()))
-        showMessage(mediaTypeName(type) + " добавлено")
+        if (!file.exists() || file.length() < 1024) {
+            showMessage("Файл поврежден или слишком маленький")
+            if (file.exists()) file.delete()
+            return
+        }
+
+        val pointId = editingPointId
+        if (pointId != null) {
+            // Режим редактирования - сохраняем сразу через репозиторий
+            val mainActivity = requireActivity() as MainActivity
+            val entry = MemoryEntry(
+                memoryPointId = pointId,
+                type = type,
+                content = file.name,
+                filePath = file.absolutePath,
+                fileSize = file.length(),
+                duration = null,
+                orderIndex = 0,
+                entryId = 0,
+                thumbnailPath = null
+            )
+            viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                mainActivity.memoryRepo.addMemoryEntry(entry)
+                withContext(Dispatchers.Main) {
+                    showMessage(mediaTypeName(type) + " сохранено")
+                    viewModel.loadMemories()
+                }
+            }
+        } else {
+            // Режим создания - добавляем в pending
+            pendingMedia.add(DiaryPendingMedia(file.absolutePath, type, file.length()))
+            showMessage(mediaTypeName(type) + " добавлено")
+        }
     }
 
     private fun handleMediaResult(uri: Uri, type: String, ext: String) {
         try {
             val file = copyUriToFile(uri, type.uppercase(), ext)
-            if (file == null || !file.exists()) {
-                showMessage("Ошибка копирования файла")
+            if (file == null || !file.exists() || file.length() < 1024) {
+                showMessage("Ошибка копирования файла или файл поврежден")
                 return
             }
-            pendingMedia.add(DiaryPendingMedia(file.absolutePath, type, file.length()))
-            showMessage(mediaTypeName(type) + " добавлено")
+
+            val pointId = editingPointId
+            if (pointId != null) {
+                // Режим редактирования - сохраняем сразу через репозиторий
+                val mainActivity = requireActivity() as MainActivity
+                val entry = MemoryEntry(
+                    memoryPointId = pointId,
+                    type = type,
+                    content = file.name,
+                    filePath = file.absolutePath,
+                    fileSize = file.length(),
+                    duration = null,
+                    orderIndex = 0,
+                    entryId = 0,
+                    thumbnailPath = null
+                )
+                viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                    mainActivity.memoryRepo.addMemoryEntry(entry)
+                    withContext(Dispatchers.Main) {
+                        showMessage(mediaTypeName(type) + " сохранено")
+                        viewModel.loadMemories()
+                    }
+                }
+            } else {
+                // Режим создания - добавляем в pending
+                pendingMedia.add(DiaryPendingMedia(file.absolutePath, type, file.length()))
+                showMessage(mediaTypeName(type) + " добавлено")
+            }
         } catch (e: Exception) {
             Timber.e(e, "Error handling media result")
             showMessage("Ошибка сохранения: ${e.message}")
@@ -472,7 +594,7 @@ class DiaryFragment : Fragment() {
             requireContext().contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(file).use { output -> input.copyTo(output) }
             }
-            if (file.length() > 0) file else null
+            if (file.exists() && file.length() > 1024) file else null
         } catch (e: Exception) {
             Timber.e(e, "Error copying URI to file")
             null

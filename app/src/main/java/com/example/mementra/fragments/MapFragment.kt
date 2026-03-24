@@ -8,10 +8,12 @@ import android.provider.MediaStore
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import com.example.mementra.MainActivity
 import com.example.mementra.database.models.MemoryEntry
 import com.example.mementra.database.models.MemoryPoint
@@ -21,12 +23,14 @@ import com.example.mementra.utils.PermissionHelper
 import com.example.mementra.viewmodels.MapEvent
 import com.example.mementra.viewmodels.MapViewModel
 import com.example.mementra.viewmodels.MapViewModelFactory
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
-import android.widget.Toast
 import timber.log.Timber
 import java.io.File
 import java.io.FileOutputStream
@@ -58,6 +62,9 @@ class MapFragment : Fragment() {
     // Для режима редактирования: pointId уже известен, медиа сохраняется сразу
     private var editingPointId: Long? = null
 
+    // Флаг для отслеживания сохранения
+    private var isSaving = false
+
     private var cameraPhotoUri: Uri? = null
     private var cameraPhotoFile: File? = null
     private var cameraVideoUri: Uri? = null
@@ -74,9 +81,14 @@ class MapFragment : Fragment() {
     private val takePhoto = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success) {
             cameraPhotoFile?.let { file ->
-                if (file.exists() && file.length() > 0) {
-                    handleCameraFile(file, MemoryEntry.TYPE_PHOTO)
-                }
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    if (file.exists() && file.length() > 1024) {
+                        handleCameraFile(file, MemoryEntry.TYPE_PHOTO)
+                    } else {
+                        showMessage("Фото не сохранено или файл поврежден")
+                        if (file.exists() && file.length() == 0L) file.delete()
+                    }
+                }, 500)
             }
         }
     }
@@ -96,11 +108,14 @@ class MapFragment : Fragment() {
     private val captureVideo = registerForActivityResult(ActivityResultContracts.CaptureVideo()) { success ->
         if (success) {
             cameraVideoFile?.let { file ->
-                if (file.exists() && file.length() > 0) {
-                    handleCameraFile(file, MemoryEntry.TYPE_VIDEO)
-                } else {
-                    showMessage("Видео не сохранено")
-                }
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    if (file.exists() && file.length() > 1024) {
+                        handleCameraFile(file, MemoryEntry.TYPE_VIDEO)
+                    } else {
+                        showMessage("Видео не сохранено или файл поврежден")
+                        if (file.exists() && file.length() == 0L) file.delete()
+                    }
+                }, 500)
             }
         }
     }
@@ -198,7 +213,10 @@ class MapFragment : Fragment() {
             when (event) {
                 is MapEvent.ShowMessage -> showMessage(event.message)
                 is MapEvent.MemoryAdded -> {
-                    savePendingMedia(event.pointId)
+                    // Точка добавлена, теперь сохраняем медиа последовательно
+                    if (!isSaving && pendingMedia.isNotEmpty()) {
+                        savePendingMediaSequentially(event.pointId)
+                    }
                 }
                 is MapEvent.MemoryUpdated -> { updateMemoryMarker(event.memoryPoint) }
                 is MapEvent.MemoryDeleted -> { removeMemoryMarker(event.pointId) }
@@ -207,14 +225,72 @@ class MapFragment : Fragment() {
         }
     }
 
-    private fun savePendingMedia(pointId: Long) {
+    private fun savePendingMediaSequentially(pointId: Long) {
         if (pendingMedia.isEmpty()) return
-        for (media in pendingMedia) {
-            viewModel.addMediaEntry(pointId, media.type, media.filePath, media.fileSize, media.duration)
+
+        isSaving = true
+
+        // Используем корутину для последовательного сохранения
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val mainActivity = requireActivity() as MainActivity
+                val repository = mainActivity.memoryRepo
+
+                var savedCount = 0
+                for (media in pendingMedia) {
+                    val file = File(media.filePath)
+                    if (file.exists() && file.length() > 1024) {
+                        Timber.d("Saving media: ${media.type}, file: ${file.absolutePath}, size: ${file.length()}")
+
+                        // Создаем entry и сохраняем через репозиторий напрямую
+                        val entry = MemoryEntry(
+                            memoryPointId = pointId,
+                            type = media.type,
+                            content = file.name,
+                            filePath = media.filePath,
+                            fileSize = file.length(),
+                            duration = media.duration,
+                            orderIndex = savedCount,
+                            entryId = 0,
+                            thumbnailPath = null
+                        )
+
+                        repository.addMemoryEntry(entry)
+                        savedCount++
+
+                        withContext(Dispatchers.Main) {
+                            showMessage("${mediaTypeName(media.type)} сохранено")
+                        }
+                    } else {
+                        Timber.e("File invalid: ${media.filePath}, exists: ${file.exists()}, size: ${file.length()}")
+                        withContext(Dispatchers.Main) {
+                            showMessage("Файл ${mediaTypeName(media.type)} поврежден и не сохранен")
+                        }
+                        if (file.exists()) file.delete()
+                    }
+                }
+
+                pendingMedia.clear()
+
+                withContext(Dispatchers.Main) {
+                    if (savedCount > 0) {
+                        showMessage("Сохранено $savedCount файлов")
+                    }
+                    Timber.d("Saved $savedCount pending media entries for pointId=$pointId")
+
+                    // Обновляем список точек, чтобы показать новые медиа
+                    viewModel.loadMemoryPoints()
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error saving pending media")
+                withContext(Dispatchers.Main) {
+                    showMessage("Ошибка сохранения: ${e.message}")
+                    pendingMedia.clear()
+                }
+            } finally {
+                isSaving = false
+            }
         }
-        val count = pendingMedia.size
-        pendingMedia.clear()
-        Timber.d("Saved $count pending media entries for pointId=$pointId")
     }
 
     // --- Map interactions ---
@@ -251,11 +327,13 @@ class MapFragment : Fragment() {
     private fun showAddMemoryDialog() {
         pendingMedia.clear()
         editingPointId = null
+        isSaving = false
 
         MemoryDialogHelper.showAddMemoryDialog(
             context = requireContext(),
             onSave = { title, description, emoji ->
                 selectedPoint?.let { point ->
+                    // Сохраняем точку
                     viewModel.addMemoryPoint(
                         title = title,
                         description = description,
@@ -424,15 +502,36 @@ class MapFragment : Fragment() {
     private fun startAudioRecording() {
         AudioRecordDialog.show(requireContext()) { filePath, durationSec ->
             val file = File(filePath)
-            if (file.exists()) {
+            if (file.exists() && file.length() > 1024) {
                 val pointId = editingPointId
                 if (pointId != null) {
-                    viewModel.addMediaEntry(pointId, MemoryEntry.TYPE_AUDIO, filePath, file.length(), durationSec)
-                    showMessage("Аудио сохранено")
+                    // Режим редактирования - сохраняем сразу через репозиторий
+                    val mainActivity = requireActivity() as MainActivity
+                    val entry = MemoryEntry(
+                        memoryPointId = pointId,
+                        type = MemoryEntry.TYPE_AUDIO,
+                        content = file.name,
+                        filePath = filePath,
+                        fileSize = file.length(),
+                        duration = durationSec,
+                        orderIndex = 0,
+                        entryId = 0,
+                        thumbnailPath = null
+                    )
+                    viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                        mainActivity.memoryRepo.addMemoryEntry(entry)
+                        withContext(Dispatchers.Main) {
+                            showMessage("Аудио сохранено")
+                        }
+                    }
                 } else {
+                    // Режим создания - добавляем в pending
                     pendingMedia.add(PendingMedia(filePath, MemoryEntry.TYPE_AUDIO, file.length(), durationSec))
                     showMessage("Аудио добавлено")
                 }
+            } else {
+                showMessage("Аудио не сохранено или файл поврежден")
+                if (file.exists() && file.length() == 0L) file.delete()
             }
         }
     }
@@ -512,11 +611,35 @@ class MapFragment : Fragment() {
     }
 
     private fun handleCameraFile(file: File, type: String) {
+        if (!file.exists() || file.length() < 1024) {
+            showMessage("Файл поврежден или слишком маленький")
+            if (file.exists()) file.delete()
+            return
+        }
+
         val pointId = editingPointId
         if (pointId != null) {
-            viewModel.addMediaEntry(pointId, type, file.absolutePath, file.length())
-            showMessage(mediaTypeName(type) + " сохранено")
+            // Режим редактирования - сохраняем сразу через репозиторий
+            val mainActivity = requireActivity() as MainActivity
+            val entry = MemoryEntry(
+                memoryPointId = pointId,
+                type = type,
+                content = file.name,
+                filePath = file.absolutePath,
+                fileSize = file.length(),
+                duration = null,
+                orderIndex = 0,
+                entryId = 0,
+                thumbnailPath = null
+            )
+            viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                mainActivity.memoryRepo.addMemoryEntry(entry)
+                withContext(Dispatchers.Main) {
+                    showMessage(mediaTypeName(type) + " сохранено")
+                }
+            }
         } else {
+            // Режим создания - добавляем в pending
             pendingMedia.add(PendingMedia(file.absolutePath, type, file.length()))
             showMessage(mediaTypeName(type) + " добавлено")
         }
@@ -525,16 +648,34 @@ class MapFragment : Fragment() {
     private fun handleMediaResult(uri: Uri, type: String, ext: String) {
         try {
             val file = copyUriToFile(uri, type.uppercase(), ext)
-            if (file == null || !file.exists()) {
-                showMessage("Ошибка копирования файла")
+            if (file == null || !file.exists() || file.length() < 1024) {
+                showMessage("Ошибка копирования файла или файл поврежден")
                 return
             }
 
             val pointId = editingPointId
             if (pointId != null) {
-                viewModel.addMediaEntry(pointId, type, file.absolutePath, file.length())
-                showMessage(mediaTypeName(type) + " сохранено")
+                // Режим редактирования - сохраняем сразу через репозиторий
+                val mainActivity = requireActivity() as MainActivity
+                val entry = MemoryEntry(
+                    memoryPointId = pointId,
+                    type = type,
+                    content = file.name,
+                    filePath = file.absolutePath,
+                    fileSize = file.length(),
+                    duration = null,
+                    orderIndex = 0,
+                    entryId = 0,
+                    thumbnailPath = null
+                )
+                viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                    mainActivity.memoryRepo.addMemoryEntry(entry)
+                    withContext(Dispatchers.Main) {
+                        showMessage(mediaTypeName(type) + " сохранено")
+                    }
+                }
             } else {
+                // Режим создания - добавляем в pending
                 pendingMedia.add(PendingMedia(file.absolutePath, type, file.length()))
                 showMessage(mediaTypeName(type) + " добавлено")
             }
@@ -548,9 +689,11 @@ class MapFragment : Fragment() {
         return try {
             val file = createMediaFile(prefix, ext)
             requireContext().contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(file).use { output -> input.copyTo(output) }
+                FileOutputStream(file).use { output ->
+                    input.copyTo(output)
+                }
             }
-            if (file.length() > 0) file else null
+            if (file.exists() && file.length() > 1024) file else null
         } catch (e: Exception) {
             Timber.e(e, "Error copying URI to file")
             null
@@ -560,7 +703,7 @@ class MapFragment : Fragment() {
     private fun createMediaFile(prefix: String, ext: String): File {
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.getDefault()).format(Date())
         val dir = File(requireContext().filesDir, "media")
-        dir.mkdirs()
+        if (!dir.exists()) dir.mkdirs()
         return File(dir, "${prefix}_${timestamp}${ext}")
     }
 

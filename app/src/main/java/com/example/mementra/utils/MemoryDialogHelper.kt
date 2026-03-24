@@ -4,12 +4,8 @@ import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.Typeface
-import android.media.MediaPlayer
-import android.net.Uri
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -152,7 +148,6 @@ object MemoryDialogHelper {
         val tvDescription = dialogView.findViewById<TextView>(R.id.tvDescription)
         val tvDate = dialogView.findViewById<TextView>(R.id.tvDate)
         val tvLocation = dialogView.findViewById<TextView>(R.id.tvLocation)
-        val tvEntries = dialogView.findViewById<TextView>(R.id.tvEntries)
         val mediaContainer = dialogView.findViewById<LinearLayout>(R.id.mediaContainer)
         val btnFavorite = dialogView.findViewById<android.widget.ImageButton>(R.id.btnFavorite)
         val btnEdit = dialogView.findViewById<android.widget.Button>(R.id.btnEdit)
@@ -166,24 +161,25 @@ object MemoryDialogHelper {
 
         updateFavoriteIcon(btnFavorite, memoryPoint.isFavorite)
 
-        val photos = entries.filter { it.type == MemoryEntry.TYPE_PHOTO && !it.filePath.isNullOrBlank() && File(it.filePath).exists() }
-        val audios = entries.filter { it.type == MemoryEntry.TYPE_AUDIO && !it.filePath.isNullOrBlank() && File(it.filePath).exists() }
-        val videos = entries.filter { it.type == MemoryEntry.TYPE_VIDEO && !it.filePath.isNullOrBlank() && File(it.filePath).exists() }
-        val hasMedia = photos.isNotEmpty() || audios.isNotEmpty() || videos.isNotEmpty()
+        // Фильтруем медиа
+        val photos = entries.filter {
+            it.type == MemoryEntry.TYPE_PHOTO &&
+                    !it.filePath.isNullOrBlank() &&
+                    File(it.filePath).exists()
+        }
+        val audios = entries.filter {
+            it.type == MemoryEntry.TYPE_AUDIO &&
+                    !it.filePath.isNullOrBlank() &&
+                    File(it.filePath).exists()
+        }
+        val videos = entries.filter {
+            it.type == MemoryEntry.TYPE_VIDEO &&
+                    !it.filePath.isNullOrBlank() &&
+                    File(it.filePath).exists()
+        }
 
-        if (photos.isNotEmpty()) {
-            addMediaGroupButton(context, mediaContainer, photos, MemoryEntry.TYPE_PHOTO)
-        }
-        if (audios.isNotEmpty()) {
-            addAudioGroupToContainer(context, mediaContainer, audios)
-        }
-        if (videos.isNotEmpty()) {
-            addMediaGroupButton(context, mediaContainer, videos, MemoryEntry.TYPE_VIDEO)
-        }
-
-        tvEntries.visibility = View.GONE
-        dialogView.findViewById<TextView>(R.id.tvEntriesLabel)?.visibility =
-            if (hasMedia) View.VISIBLE else View.GONE
+        // Используем новый MediaGridHelper для красивого отображения
+        MediaGridHelper.displayMedia(context, mediaContainer, photos, videos, audios)
 
         btnFavorite.setOnClickListener {
             val newState = !memoryPoint.isFavorite
@@ -269,170 +265,6 @@ object MemoryDialogHelper {
             }
             buttons.add(tv)
             container.addView(tv)
-        }
-    }
-
-    private fun addMediaGroupButton(
-        context: Context,
-        container: LinearLayout?,
-        entries: List<MemoryEntry>,
-        type: String
-    ) {
-        container ?: return
-        if (entries.isEmpty()) return
-
-        val density = context.resources.displayMetrics.density
-        val count = entries.size
-        val (label, icon, mime) = when (type) {
-            MemoryEntry.TYPE_PHOTO -> Triple(
-                if (count == 1) "Просмотреть фото" else "Просмотреть фото ($count)",
-                android.R.drawable.ic_menu_gallery,
-                "image/*"
-            )
-            MemoryEntry.TYPE_VIDEO -> Triple(
-                if (count == 1) "Воспроизвести видео" else "Воспроизвести видео ($count)",
-                android.R.drawable.ic_media_play,
-                "video/mp4"
-            )
-            else -> return
-        }
-
-        if (count == 1) {
-            val file = File(entries.first().filePath!!)
-            val btn = MaterialButton(context).apply {
-                text = label
-                setIconResource(icon)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = (8 * density).toInt() }
-            }
-            btn.setOnClickListener { openFileWithProvider(context, file, mime) }
-            container.addView(btn)
-        } else {
-            val btn = MaterialButton(context).apply {
-                text = label
-                setIconResource(icon)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = (8 * density).toInt() }
-            }
-            btn.setOnClickListener {
-                showMediaListDialog(context, entries, type, mime)
-            }
-            container.addView(btn)
-        }
-    }
-
-    private fun showMediaListDialog(context: Context, entries: List<MemoryEntry>, type: String, mime: String) {
-        val names = entries.mapIndexed { i, _ ->
-            when (type) {
-                MemoryEntry.TYPE_PHOTO -> "Фото ${i + 1}"
-                MemoryEntry.TYPE_VIDEO -> "Видео ${i + 1}"
-                else -> "Файл ${i + 1}"
-            }
-        }.toTypedArray()
-
-        AlertDialog.Builder(context)
-            .setTitle(if (type == MemoryEntry.TYPE_PHOTO) "Фото" else "Видео")
-            .setItems(names) { _, which ->
-                val file = File(entries[which].filePath!!)
-                openFileWithProvider(context, file, mime)
-            }
-            .setNegativeButton("Закрыть", null)
-            .show()
-    }
-
-    private fun addAudioGroupToContainer(context: Context, container: LinearLayout?, entries: List<MemoryEntry>) {
-        container ?: return
-        if (entries.isEmpty()) return
-
-        val density = context.resources.displayMetrics.density
-        val count = entries.size
-        val label = if (count == 1) "Воспроизвести аудио" else "Воспроизвести аудио ($count)"
-
-        val btn = MaterialButton(context).apply {
-            text = label
-            setIconResource(android.R.drawable.ic_media_play)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = (8 * density).toInt() }
-        }
-
-        if (count == 1) {
-            var mediaPlayer: MediaPlayer? = null
-            val filePath = entries.first().filePath!!
-            btn.setOnClickListener {
-                if (mediaPlayer?.isPlaying == true) {
-                    mediaPlayer?.stop()
-                    mediaPlayer?.release()
-                    mediaPlayer = null
-                    btn.text = label
-                } else {
-                    try {
-                        mediaPlayer = MediaPlayer().apply {
-                            setDataSource(filePath)
-                            prepare()
-                            start()
-                        }
-                        btn.text = "Остановить"
-                        mediaPlayer?.setOnCompletionListener {
-                            btn.text = label
-                            mediaPlayer?.release()
-                            mediaPlayer = null
-                        }
-                    } catch (_: Exception) { }
-                }
-            }
-        } else {
-            btn.setOnClickListener {
-                showAudioListDialog(context, entries)
-            }
-        }
-
-        container.addView(btn)
-    }
-
-    private fun showAudioListDialog(context: Context, entries: List<MemoryEntry>) {
-        val names = entries.mapIndexed { i, _ -> "Аудио ${i + 1}" }.toTypedArray()
-        var currentPlayer: MediaPlayer? = null
-
-        AlertDialog.Builder(context)
-            .setTitle("Аудио")
-            .setItems(names) { _, which ->
-                currentPlayer?.let { if (it.isPlaying) it.stop(); it.release() }
-                try {
-                    currentPlayer = MediaPlayer().apply {
-                        setDataSource(entries[which].filePath!!)
-                        prepare()
-                        start()
-                    }
-                } catch (_: Exception) { }
-            }
-            .setNegativeButton("Закрыть") { _, _ ->
-                currentPlayer?.let { if (it.isPlaying) it.stop(); it.release() }
-            }
-            .show()
-    }
-
-    private fun openFileWithProvider(context: Context, file: File, mimeType: String) {
-        try {
-            val uri = androidx.core.content.FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.provider",
-                file
-            )
-            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, mimeType)
-                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            val chooser = android.content.Intent.createChooser(intent, "Открыть с помощью...")
-            context.startActivity(chooser)
-        } catch (e: Exception) {
-            android.widget.Toast.makeText(context, "Не удалось открыть файл", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
