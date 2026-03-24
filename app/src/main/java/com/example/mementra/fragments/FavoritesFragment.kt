@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.mementra.MainActivity
 import com.example.mementra.adapters.FavoritesAdapter
@@ -23,8 +24,9 @@ import com.example.mementra.utils.PermissionHelper
 import com.example.mementra.viewmodels.FavoritesUiState
 import com.example.mementra.viewmodels.FavoritesViewModel
 import com.example.mementra.viewmodels.FavoritesViewModelFactory
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
 import java.io.FileOutputStream
@@ -48,6 +50,7 @@ class FavoritesFragment : Fragment() {
 
     private val pendingMedia = mutableListOf<FavoritesPendingMedia>()
     private var editingPointId: Long? = null
+    private var currentDialog: android.app.Dialog? = null
 
     private var cameraPhotoUri: Uri? = null
     private var cameraPhotoFile: File? = null
@@ -65,9 +68,14 @@ class FavoritesFragment : Fragment() {
     private val takePhoto = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success) {
             cameraPhotoFile?.let { file ->
-                if (file.exists() && file.length() > 0) {
-                    handleCameraFile(file, MemoryEntry.TYPE_PHOTO)
-                }
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    if (file.exists() && file.length() > 1024) {
+                        handleCameraFile(file, MemoryEntry.TYPE_PHOTO)
+                    } else {
+                        showMessage("Фото не сохранено или файл поврежден")
+                        if (file.exists() && file.length() == 0L) file.delete()
+                    }
+                }, 500)
             }
         }
     }
@@ -87,11 +95,14 @@ class FavoritesFragment : Fragment() {
     private val captureVideo = registerForActivityResult(ActivityResultContracts.CaptureVideo()) { success ->
         if (success) {
             cameraVideoFile?.let { file ->
-                if (file.exists() && file.length() > 0) {
-                    handleCameraFile(file, MemoryEntry.TYPE_VIDEO)
-                } else {
-                    showMessage("Видео не сохранено")
-                }
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    if (file.exists() && file.length() > 1024) {
+                        handleCameraFile(file, MemoryEntry.TYPE_VIDEO)
+                    } else {
+                        showMessage("Видео не сохранено или файл поврежден")
+                        if (file.exists() && file.length() == 0L) file.delete()
+                    }
+                }, 500)
             }
         }
     }
@@ -172,12 +183,15 @@ class FavoritesFragment : Fragment() {
             try {
                 val entries = repository.getMemoryEntries(pointId)
 
+                // Закрываем предыдущий диалог
+                currentDialog?.dismiss()
+
                 MemoryDialogHelper.showMemoryDetailsDialog(
                     context = requireContext(),
                     memoryPoint = memoryPoint,
                     entries = entries,
                     onFavoriteToggle = { newState ->
-                        viewModel.toggleFavorite(pointId, !newState)
+                        viewModel.toggleFavorite(pointId, newState)
                     },
                     onEdit = { showEditMemoryDialog(memoryPoint) },
                     onDelete = {
@@ -186,12 +200,45 @@ class FavoritesFragment : Fragment() {
                             memoryTitle = memoryPoint.title,
                             onConfirm = { viewModel.deleteMemory(pointId, memoryPoint.title) }
                         )
+                    },
+                    onMediaDelete = { entry ->
+                        viewLifecycleOwner.lifecycleScope.launch {
+                            try {
+                                Timber.d("=== DELETING MEDIA ===")
+                                Timber.d("Entry ID: ${entry.entryId}")
+                                Timber.d("Type: ${entry.type}")
+                                Timber.d("Path: ${entry.filePath}")
+
+                                val file = File(entry.filePath)
+                                if (file.exists()) {
+                                    file.delete()
+                                }
+
+                                viewModel.deleteMediaEntry(entry.entryId)
+                                showMessage("${getMediaTypeName(entry.type)} удалено")
+
+                                currentDialog?.dismiss()
+                                showMemoryDetails(pointId)
+                            } catch (e: Exception) {
+                                Timber.e(e, "Error deleting media")
+                                showMessage("Ошибка при удалении: ${e.message}")
+                            }
+                        }
                     }
-                )
+                ).also { dialog ->
+                    currentDialog = dialog
+                }
             } catch (e: Exception) {
                 showMessage("Ошибка загрузки записей: ${e.message}")
             }
         }
+    }
+
+    private fun getMediaTypeName(type: String): String = when (type) {
+        MemoryEntry.TYPE_PHOTO -> "Фото"
+        MemoryEntry.TYPE_AUDIO -> "Аудио"
+        MemoryEntry.TYPE_VIDEO -> "Видео"
+        else -> "Файл"
     }
 
     private fun showEditMemoryDialog(memoryPoint: MemoryPoint) {
@@ -241,7 +288,7 @@ class FavoritesFragment : Fragment() {
                     repository.addMemoryEntry(entry)
                 }
                 pendingMedia.clear()
-                viewModel.loadFavorites() // Обновляем список, чтобы увидеть новые медиа
+                viewModel.loadFavorites()
             } catch (e: Exception) {
                 Timber.e(e, "Error saving pending media")
                 viewModel.loadFavorites()
@@ -296,9 +343,35 @@ class FavoritesFragment : Fragment() {
     private fun startAudioRecording() {
         AudioRecordDialog.show(requireContext()) { filePath, durationSec ->
             val file = File(filePath)
-            if (file.exists()) {
-                pendingMedia.add(FavoritesPendingMedia(filePath, MemoryEntry.TYPE_AUDIO, file.length(), durationSec))
-                showMessage("Аудио добавлено")
+            if (file.exists() && file.length() > 1024) {
+                val pointId = editingPointId
+                if (pointId != null) {
+                    val mainActivity = requireActivity() as MainActivity
+                    val entry = MemoryEntry(
+                        memoryPointId = pointId,
+                        type = MemoryEntry.TYPE_AUDIO,
+                        content = file.name,
+                        filePath = filePath,
+                        fileSize = file.length(),
+                        duration = durationSec,
+                        orderIndex = 0,
+                        entryId = 0,
+                        thumbnailPath = null
+                    )
+                    viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                        mainActivity.memoryRepo.addMemoryEntry(entry)
+                        withContext(Dispatchers.Main) {
+                            showMessage("Аудио сохранено")
+                            viewModel.loadFavorites()
+                        }
+                    }
+                } else {
+                    pendingMedia.add(FavoritesPendingMedia(filePath, MemoryEntry.TYPE_AUDIO, file.length(), durationSec))
+                    showMessage("Аудио добавлено")
+                }
+            } else {
+                showMessage("Аудио не сохранено или файл поврежден")
+                if (file.exists() && file.length() == 0L) file.delete()
             }
         }
     }
@@ -352,19 +425,75 @@ class FavoritesFragment : Fragment() {
     }
 
     private fun handleCameraFile(file: File, type: String) {
-        pendingMedia.add(FavoritesPendingMedia(file.absolutePath, type, file.length()))
-        showMessage("${mediaTypeName(type)} добавлено")
+        if (!file.exists() || file.length() < 1024) {
+            showMessage("Файл поврежден или слишком маленький")
+            if (file.exists()) file.delete()
+            return
+        }
+
+        val pointId = editingPointId
+        if (pointId != null) {
+            val mainActivity = requireActivity() as MainActivity
+            val entry = MemoryEntry(
+                memoryPointId = pointId,
+                type = type,
+                content = file.name,
+                filePath = file.absolutePath,
+                fileSize = file.length(),
+                duration = null,
+                orderIndex = 0,
+                entryId = 0,
+                thumbnailPath = null
+            )
+            viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                mainActivity.memoryRepo.addMemoryEntry(entry)
+                withContext(Dispatchers.Main) {
+                    showMessage(getMediaTypeName(type) + " сохранено")
+                    viewModel.loadFavorites()
+                }
+            }
+        } else {
+            pendingMedia.add(FavoritesPendingMedia(file.absolutePath, type, file.length()))
+            showMessage(getMediaTypeName(type) + " добавлено")
+        }
     }
 
     private fun handleMediaResult(uri: Uri, type: String, ext: String) {
         try {
             val file = copyUriToFile(uri, type.uppercase(), ext)
-            if (file != null && file.exists()) {
+            if (file == null || !file.exists() || file.length() < 1024) {
+                showMessage("Ошибка копирования файла или файл поврежден")
+                return
+            }
+
+            val pointId = editingPointId
+            if (pointId != null) {
+                val mainActivity = requireActivity() as MainActivity
+                val entry = MemoryEntry(
+                    memoryPointId = pointId,
+                    type = type,
+                    content = file.name,
+                    filePath = file.absolutePath,
+                    fileSize = file.length(),
+                    duration = null,
+                    orderIndex = 0,
+                    entryId = 0,
+                    thumbnailPath = null
+                )
+                viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                    mainActivity.memoryRepo.addMemoryEntry(entry)
+                    withContext(Dispatchers.Main) {
+                        showMessage(getMediaTypeName(type) + " сохранено")
+                        viewModel.loadFavorites()
+                    }
+                }
+            } else {
                 pendingMedia.add(FavoritesPendingMedia(file.absolutePath, type, file.length()))
-                showMessage("${mediaTypeName(type)} добавлено")
+                showMessage(getMediaTypeName(type) + " добавлено")
             }
         } catch (e: Exception) {
-            Timber.e(e)
+            Timber.e(e, "Error handling media result")
+            showMessage("Ошибка сохранения: ${e.message}")
         }
     }
 
@@ -374,7 +503,7 @@ class FavoritesFragment : Fragment() {
             requireContext().contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(file).use { output -> input.copyTo(output) }
             }
-            if (file.length() > 0) file else null
+            if (file.exists() && file.length() > 1024) file else null
         } catch (e: Exception) { null }
     }
 

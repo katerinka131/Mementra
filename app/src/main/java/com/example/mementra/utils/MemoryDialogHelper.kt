@@ -139,8 +139,9 @@ object MemoryDialogHelper {
         entries: List<MemoryEntry>,
         onFavoriteToggle: (isFavorite: Boolean) -> Unit,
         onEdit: () -> Unit,
-        onDelete: () -> Unit
-    ) {
+        onDelete: () -> Unit,
+        onMediaDelete: ((MemoryEntry) -> Unit)? = null
+    ): android.app.Dialog {
         val dialogView = LayoutInflater.from(context).inflate(R.layout.bottom_sheet_memory_details, null)
         val dialog = createBottomSheetDialog(context, dialogView)
 
@@ -165,20 +166,26 @@ object MemoryDialogHelper {
         val photos = entries.filter {
             it.type == MemoryEntry.TYPE_PHOTO &&
                     !it.filePath.isNullOrBlank() &&
-                    File(it.filePath).exists()
+                    File(it.filePath).exists() &&
+                    File(it.filePath).length() > 0
         }
         val audios = entries.filter {
             it.type == MemoryEntry.TYPE_AUDIO &&
                     !it.filePath.isNullOrBlank() &&
-                    File(it.filePath).exists()
+                    File(it.filePath).exists() &&
+                    File(it.filePath).length() > 0
         }
         val videos = entries.filter {
             it.type == MemoryEntry.TYPE_VIDEO &&
                     !it.filePath.isNullOrBlank() &&
-                    File(it.filePath).exists()
+                    File(it.filePath).exists() &&
+                    File(it.filePath).length() > 0
         }
 
-        // Используем новый MediaGridHelper для красивого отображения
+        // Устанавливаем слушатель удаления для MediaGridHelper
+        MediaGridHelper.setOnMediaDeleteListener(onMediaDelete)
+
+        // Используем MediaGridHelper для красивого отображения
         MediaGridHelper.displayMedia(context, mediaContainer, photos, videos, audios)
 
         btnFavorite.setOnClickListener {
@@ -201,7 +208,14 @@ object MemoryDialogHelper {
             dialog.dismiss()
         }
 
+        dialog.setOnDismissListener {
+            // Очищаем слушатель при закрытии диалога
+            MediaGridHelper.setOnMediaDeleteListener(null)
+        }
+
         dialog.show()
+
+        return dialog
     }
 
     fun showDeleteConfirmationDialog(

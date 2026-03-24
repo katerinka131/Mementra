@@ -14,6 +14,7 @@ import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import com.example.mementra.MainActivity
 import com.example.mementra.database.models.MemoryEntry
 import com.example.mementra.database.models.MemoryPoint
@@ -64,7 +65,7 @@ class MapFragment : Fragment() {
 
     // Флаг для отслеживания сохранения
     private var isSaving = false
-
+    private var currentDialog: android.app.Dialog? = null
     private var cameraPhotoUri: Uri? = null
     private var cameraPhotoFile: File? = null
     private var cameraVideoUri: Uri? = null
@@ -128,7 +129,7 @@ class MapFragment : Fragment() {
         _binding = FragmentMapBinding.inflate(inflater, container, false)
 
         val mainActivity = requireActivity() as MainActivity
-        val repository = mainActivity.memoryRepo
+        val repository = mainActivity.memoryRepo  // это RoomMemoryRepository
         val userId = mainActivity.userId
 
         val factory = MapViewModelFactory(repository, userId)
@@ -357,23 +358,69 @@ class MapFragment : Fragment() {
     private fun showMemoryDetails(pointId: Long) {
         val memoryPoint = viewModel.getMemoryPointById(pointId) ?: return
         viewModel.getMemoryEntries(pointId) { entries ->
+            // Закрываем предыдущий диалог, если он есть
+            currentDialog?.dismiss()
+
             MemoryDialogHelper.showMemoryDetailsDialog(
                 context = requireContext(),
                 memoryPoint = memoryPoint,
                 entries = entries,
                 onFavoriteToggle = { newState ->
-                    viewModel.toggleFavorite(pointId, !newState)
+                    viewModel.toggleFavorite(pointId, newState)
                 },
                 onEdit = { showEditMemoryDialog(memoryPoint) },
                 onDelete = {
                     MemoryDialogHelper.showDeleteConfirmationDialog(
                         context = requireContext(),
                         memoryTitle = memoryPoint.title,
-                        onConfirm = { viewModel.deleteMemoryPoint(pointId, memoryPoint.title) }
+                        onConfirm = {
+                            viewModel.deleteMemoryPoint(pointId, memoryPoint.title)
+                            currentDialog?.dismiss()
+                        }
                     )
+                },
+                onMediaDelete = { entry ->
+                    // Удаляем медиафайл
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        try {
+                            Timber.d("=== DELETING MEDIA ===")
+                            Timber.d("Entry ID: ${entry.entryId}")
+                            Timber.d("Type: ${entry.type}")
+                            Timber.d("Path: ${entry.filePath}")
+
+                            // Удаляем файл
+                            val file = File(entry.filePath)
+                            if (file.exists()) {
+                                val deleted = file.delete()
+                                Timber.d("File deleted: $deleted")
+                            }
+
+                            // Удаляем запись из базы
+                            viewModel.deleteMediaEntry(entry.entryId)
+                            showMessage("${getMediaTypeName(entry.type)} удалено")
+
+                            // Закрываем текущий диалог
+                            currentDialog?.dismiss()
+
+                            // Открываем обновленный диалог
+                            showMemoryDetails(pointId)
+
+                        } catch (e: Exception) {
+                            Timber.e(e, "Error deleting media")
+                            showMessage("Ошибка при удалении: ${e.message}")
+                        }
+                    }
                 }
-            )
+            ).also { dialog ->
+                currentDialog = dialog
+            }
         }
+    }
+    private fun getMediaTypeName(type: String): String = when (type) {
+        MemoryEntry.TYPE_PHOTO -> "Фото"
+        MemoryEntry.TYPE_AUDIO -> "Аудио"
+        MemoryEntry.TYPE_VIDEO -> "Видео"
+        else -> "Файл"
     }
 
     private fun showEditMemoryDialog(memoryPoint: MemoryPoint) {

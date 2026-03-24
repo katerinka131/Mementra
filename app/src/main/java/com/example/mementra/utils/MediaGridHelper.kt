@@ -7,6 +7,7 @@ import android.media.MediaPlayer
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -17,11 +18,19 @@ import com.bumptech.glide.Glide
 import com.example.mementra.R
 import com.example.mementra.database.models.MemoryEntry
 import com.google.android.material.button.MaterialButton
+import timber.log.Timber
 import java.io.File
 
 object MediaGridHelper {
 
     private var fullscreenPlayer: MediaPlayer? = null
+    private var onMediaDeleteListener: ((MemoryEntry) -> Unit)? = null
+    private var selectedView: View? = null
+
+    fun setOnMediaDeleteListener(listener: ((MemoryEntry) -> Unit)?) {
+        Timber.d("Setting onMediaDeleteListener: ${listener != null}")
+        onMediaDeleteListener = listener
+    }
 
     fun displayMedia(
         context: Context,
@@ -30,6 +39,7 @@ object MediaGridHelper {
         videos: List<MemoryEntry>,
         audios: List<MemoryEntry>
     ) {
+        Timber.d("displayMedia called - photos: ${photos.size}, videos: ${videos.size}, audios: ${audios.size}")
         container.removeAllViews()
 
         // Фото
@@ -118,19 +128,8 @@ object MediaGridHelper {
         val density = context.resources.displayMetrics.density
         val screenWidth = context.resources.displayMetrics.widthPixels
 
-        // Получаем отступы контейнера (если есть)
-        val containerPadding = if (container.parent is View) {
-            val parent = container.parent as View
-            parent.paddingLeft + parent.paddingRight
-        } else {
-            0
-        }
-
-        // Отступы внутри диалога (16dp с каждой стороны)
-        val dialogPadding = (32 * density).toInt() // 16dp слева + 16dp справа = 32dp
-        val spacing = (4 * density).toInt() // Отступ между фото
-
-        // Доступная ширина = ширина экрана - отступы диалога
+        val dialogPadding = (32 * density).toInt()
+        val spacing = (4 * density).toInt()
         val availableWidth = screenWidth - dialogPadding
         val itemSize = (availableWidth - (spacing * 2)) / 3
 
@@ -140,8 +139,6 @@ object MediaGridHelper {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
-            // Добавляем отступы слева и справа, чтобы скомпенсировать отступы диалога
-            setPadding(0, 0, 0, 0)
         }
 
         var row = LinearLayout(context).apply {
@@ -153,19 +150,28 @@ object MediaGridHelper {
         }
 
         for ((index, photo) in photos.withIndex()) {
-            val imageView = ImageView(context).apply {
+            val frameContainer = FrameLayout(context).apply {
                 layoutParams = LinearLayout.LayoutParams(itemSize, itemSize).apply {
                     if (index % 3 == 0) {
-                        // Первый в ряду
                         setMargins(0, spacing, spacing / 2, spacing)
                     } else if ((index + 1) % 3 == 0) {
-                        // Последний в ряду
                         setMargins(spacing / 2, spacing, 0, spacing)
                     } else {
-                        // Средний
                         setMargins(spacing / 2, spacing, spacing / 2, spacing)
                     }
                 }
+                isClickable = true
+                isFocusable = true
+                isLongClickable = true
+                // Устанавливаем foreground для обводки
+                foreground = null
+            }
+
+            val imageView = ImageView(context).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
                 scaleType = ImageView.ScaleType.CENTER_CROP
 
                 val file = File(photo.filePath!!)
@@ -177,11 +183,23 @@ object MediaGridHelper {
                 }
 
                 setOnClickListener {
+                    Timber.d("Click on photo: ${photo.entryId}")
+                    clearSelectedBorder()
                     openFullscreenPhoto(context, allPhotos, allPhotos.indexOf(photo))
+                }
+
+                setOnLongClickListener {
+                    Timber.d("=== LONG CLICK ON PHOTO IMAGE ===")
+                    Timber.d("Photo ID: ${photo.entryId}")
+                    clearSelectedBorder()
+                    showDeleteBorder(frameContainer)
+                    showDeleteConfirmationDialog(context, photo)
+                    true
                 }
             }
 
-            row.addView(imageView)
+            frameContainer.addView(imageView)
+            row.addView(frameContainer)
 
             if ((index + 1) % 3 == 0 || index == photos.size - 1) {
                 gridContainer.addView(row)
@@ -208,8 +226,11 @@ object MediaGridHelper {
     ) {
         val density = context.resources.displayMetrics.density
         val screenWidth = context.resources.displayMetrics.widthPixels
+
+        val dialogPadding = (32 * density).toInt()
         val spacing = (4 * density).toInt()
-        val itemSize = (screenWidth - (spacing * 2)) / 3
+        val availableWidth = screenWidth - dialogPadding
+        val itemSize = (availableWidth - (spacing * 2)) / 3
 
         val gridContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -228,8 +249,9 @@ object MediaGridHelper {
         }
 
         for ((index, video) in videos.withIndex()) {
-            val videoContainer = LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
+            Timber.d("Adding video to grid: ${video.entryId}, path: ${video.filePath}")
+
+            val frameContainer = FrameLayout(context).apply {
                 layoutParams = LinearLayout.LayoutParams(itemSize, itemSize).apply {
                     if (index % 3 == 0) {
                         setMargins(0, spacing, spacing / 2, spacing)
@@ -239,13 +261,19 @@ object MediaGridHelper {
                         setMargins(spacing / 2, spacing, spacing / 2, spacing)
                     }
                 }
-                gravity = android.view.Gravity.CENTER
+                isClickable = true
+                isFocusable = true
+                isLongClickable = true
+
+                // Лог для проверки создания
+                Timber.d("FrameContainer created for video ${video.entryId}")
             }
 
             val thumbnail = ImageView(context).apply {
-                layoutParams = LinearLayout.LayoutParams(itemSize, itemSize).apply {
-                    height = itemSize - (40 * density).toInt()
-                }
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
                 scaleType = ImageView.ScaleType.CENTER_CROP
 
                 val file = File(video.filePath!!)
@@ -259,22 +287,39 @@ object MediaGridHelper {
 
             val playIcon = TextView(context).apply {
                 text = "▶"
-                textSize = 24f
+                textSize = 32f
                 gravity = android.view.Gravity.CENTER
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
                 )
+                setShadowLayer(5f, 0f, 0f, android.graphics.Color.BLACK)
             }
 
-            videoContainer.addView(thumbnail)
-            videoContainer.addView(playIcon)
+            frameContainer.addView(thumbnail)
+            frameContainer.addView(playIcon)
 
-            videoContainer.setOnClickListener {
+            // Обработка клика на видео
+            frameContainer.setOnClickListener {
+                Timber.d("Click on video: ${video.entryId}")
+                clearSelectedBorder()
                 openVideoWithPlayer(context, video.filePath!!)
             }
 
-            row.addView(videoContainer)
+            // Обработка долгого нажатия на FrameContainer
+            frameContainer.setOnLongClickListener {
+                Timber.d("=== LONG CLICK ON VIDEO FRAME ===")
+                Timber.d("Video ID: ${video.entryId}")
+                clearSelectedBorder()
+                showDeleteBorder(frameContainer)
+                showDeleteConfirmationDialog(context, video)
+                true
+            }
+
+            // Добавляем лог для проверки, что слушатель установлен
+            Timber.d("Long click listener set for video ${video.entryId}")
+
+            row.addView(frameContainer)
 
             if ((index + 1) % 3 == 0 || index == videos.size - 1) {
                 gridContainer.addView(row)
@@ -309,6 +354,9 @@ object MediaGridHelper {
                 }
                 setPadding((16 * density).toInt(), (12 * density).toInt(), (16 * density).toInt(), (12 * density).toInt())
                 setBackgroundResource(R.drawable.audio_item_background)
+                isClickable = true
+                isFocusable = true
+                isLongClickable = true
             }
 
             val playButton = TextView(context).apply {
@@ -366,10 +414,67 @@ object MediaGridHelper {
                 }
             }
 
+            audioItem.setOnLongClickListener {
+                Timber.d("Long click on audio: ${audio.entryId}")
+                clearSelectedBorder()
+                showDeleteBorder(audioItem)
+                showDeleteConfirmationDialog(context, audio)
+                true
+            }
+
             audioItem.addView(playButton)
             audioItem.addView(audioName)
             container.addView(audioItem)
         }
+    }
+
+    private fun showDeleteBorder(view: View) {
+        clearSelectedBorder()
+        Timber.d("Showing delete border on view: ${view.javaClass.simpleName}")
+
+        // Используем foreground для FrameLayout
+        if (view is FrameLayout) {
+            view.foreground = view.context.getDrawable(R.drawable.item_selected_border)
+        } else {
+            view.setBackgroundResource(R.drawable.item_selected_border)
+        }
+
+        selectedView = view
+    }
+
+    private fun clearSelectedBorder() {
+        selectedView?.let { view ->
+            if (view is ImageView) {
+                view.foreground = null
+            }
+            view.setBackgroundResource(android.R.color.transparent)
+        }
+        selectedView = null
+    }
+
+    private fun showDeleteConfirmationDialog(context: Context, entry: MemoryEntry) {
+        val mediaType = when (entry.type) {
+            MemoryEntry.TYPE_PHOTO -> "фото"
+            MemoryEntry.TYPE_VIDEO -> "видео"
+            MemoryEntry.TYPE_AUDIO -> "аудио"
+            else -> "файл"
+        }
+
+        Timber.d("Showing delete dialog for $mediaType: ${entry.entryId}")
+
+        AlertDialog.Builder(context)
+            .setTitle("Удаление")
+            .setMessage("Вы уверены, что хотите удалить это $mediaType?")
+            .setPositiveButton("Удалить") { _, _ ->
+                Timber.d("User confirmed delete for ${entry.entryId}")
+                onMediaDeleteListener?.invoke(entry)
+                clearSelectedBorder()
+            }
+            .setNegativeButton("Отмена") { _, _ ->
+                Timber.d("User cancelled delete for ${entry.entryId}")
+                clearSelectedBorder()
+            }
+            .show()
     }
 
     private fun addShowAllButton(context: Context, container: LinearLayout, allItems: List<MemoryEntry>, type: String) {
@@ -403,16 +508,11 @@ object MediaGridHelper {
 
         val density = context.resources.displayMetrics.density
         val screenWidth = context.resources.displayMetrics.widthPixels
-
-        // Отступы внутри диалога (как в основном диалоге)
-        val dialogPadding = (32 * density).toInt() // 16dp слева + 16dp справа
-        val spacing = (4 * density).toInt() // Отступ между фото
-
-        // Доступная ширина = ширина экрана - отступы диалога
+        val dialogPadding = (32 * density).toInt()
+        val spacing = (4 * density).toInt()
         val availableWidth = screenWidth - dialogPadding
         val itemSize = (availableWidth - (spacing * 2)) / 3
 
-        // Убираем внутренние отступы у RecyclerView
         recyclerView.setPadding(0, 0, 0, 0)
         recyclerView.clipToPadding = false
 
@@ -427,17 +527,14 @@ object MediaGridHelper {
 
                 when (column) {
                     0 -> {
-                        // Первый в ряду - нет левого отступа
                         outRect.left = 0
                         outRect.right = spacing / 2
                     }
                     2 -> {
-                        // Последний в ряду - нет правого отступа
                         outRect.left = spacing / 2
                         outRect.right = 0
                     }
                     else -> {
-                        // Средний - отступы с обеих сторон
                         outRect.left = spacing / 2
                         outRect.right = spacing / 2
                     }
@@ -454,7 +551,6 @@ object MediaGridHelper {
 
         dialog.show()
 
-        // Устанавливаем размер диалога
         dialog.window?.setLayout(
             ViewGroup.LayoutParams.MATCH_PARENT,
             (context.resources.displayMetrics.heightPixels * 0.8).toInt()
@@ -571,6 +667,12 @@ object MediaGridHelper {
                 } else {
                     openVideoWithPlayer(context, item.filePath!!)
                 }
+            }
+
+            holder.itemView.setOnLongClickListener {
+                showDeleteBorder(holder.itemView)
+                showDeleteConfirmationDialog(context, item)
+                true
             }
         }
 

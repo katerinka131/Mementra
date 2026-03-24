@@ -8,6 +8,7 @@ import com.example.mementra.database.MemoryPointRepository
 import com.example.mementra.database.models.MemoryPoint
 import com.example.mementra.utils.SingleLiveEvent
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 /**
  * UI State для FavoritesFragment
@@ -51,10 +52,10 @@ class FavoritesViewModel(
         viewModelScope.launch {
             try {
                 _uiState.value = FavoritesUiState.Loading
-                
+
                 val favorites = repository.getFavoriteMemoryPoints(userId)
                 _favoriteMemories.value = favorites
-                
+
                 if (favorites.isEmpty()) {
                     _uiState.value = FavoritesUiState.Empty
                 } else {
@@ -69,14 +70,12 @@ class FavoritesViewModel(
     /**
      * Переключить избранное
      */
-    fun toggleFavorite(pointId: Long, currentState: Boolean) {
+    fun toggleFavorite(pointId: Long, isFavorite: Boolean) {
         viewModelScope.launch {
             try {
-                val newState = !currentState
-                val success = repository.toggleFavorite(pointId, newState)
-                
+                val success = repository.toggleFavorite(pointId, isFavorite)
+
                 if (success) {
-                    // Перезагружаем список без уведомлений
                     loadFavorites()
                 } else {
                     _message.value = "Ошибка при обновлении избранного"
@@ -94,10 +93,9 @@ class FavoritesViewModel(
         viewModelScope.launch {
             try {
                 val success = repository.deleteMemoryPoint(pointId)
-                
+
                 if (success) {
                     loadFavorites()
-                    // Убрано уведомление об успешном удалении
                 } else {
                     _message.value = "Ошибка при удалении"
                 }
@@ -107,6 +105,9 @@ class FavoritesViewModel(
         }
     }
 
+    /**
+     * Обновить воспоминание
+     */
     fun updateMemory(memoryPoint: MemoryPoint) {
         if (memoryPoint.title.isBlank()) {
             _message.value = "Введите название воспоминания"
@@ -132,5 +133,23 @@ class FavoritesViewModel(
     fun getMemoryById(pointId: Long): MemoryPoint? {
         return _favoriteMemories.value?.find { it.pointId == pointId }
     }
-}
 
+    /**
+     * Удалить медиа запись
+     */
+    fun deleteMediaEntry(entryId: Long) {
+        viewModelScope.launch {
+            try {
+                Timber.d("Deleting media entry with ID: $entryId")
+                val success = repository.deleteMemoryEntry(entryId)
+                if (success) {
+                    Timber.d("Media entry deleted successfully: $entryId")
+                } else {
+                    Timber.e("Failed to delete media entry: $entryId")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error deleting media entry")
+            }
+        }
+    }
+}

@@ -53,6 +53,7 @@ class DiaryFragment : Fragment() {
     private val pendingMedia = mutableListOf<DiaryPendingMedia>()
     private var editingPointId: Long? = null
     private var isSaving = false
+    private var currentDialog: android.app.Dialog? = null
 
     private var cameraPhotoUri: Uri? = null
     private var cameraPhotoFile: File? = null
@@ -230,12 +231,16 @@ class DiaryFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val entries = repository.getMemoryEntries(pointId)
+
+                // Закрываем предыдущий диалог
+                currentDialog?.dismiss()
+
                 MemoryDialogHelper.showMemoryDetailsDialog(
                     context = requireContext(),
                     memoryPoint = memoryPoint,
                     entries = entries,
                     onFavoriteToggle = { newState ->
-                        viewModel.toggleFavorite(pointId, !newState)
+                        viewModel.toggleFavorite(pointId, newState)
                     },
                     onEdit = { showEditMemoryDialog(memoryPoint) },
                     onDelete = {
@@ -244,12 +249,45 @@ class DiaryFragment : Fragment() {
                             memoryTitle = memoryPoint.title,
                             onConfirm = { viewModel.deleteMemory(pointId, memoryPoint.title) }
                         )
+                    },
+                    onMediaDelete = { entry ->
+                        viewLifecycleOwner.lifecycleScope.launch {
+                            try {
+                                Timber.d("=== DELETING MEDIA ===")
+                                Timber.d("Entry ID: ${entry.entryId}")
+                                Timber.d("Type: ${entry.type}")
+                                Timber.d("Path: ${entry.filePath}")
+
+                                val file = File(entry.filePath)
+                                if (file.exists()) {
+                                    file.delete()
+                                }
+
+                                viewModel.deleteMediaEntry(entry.entryId)
+                                showMessage("${getMediaTypeName(entry.type)} удалено")
+
+                                currentDialog?.dismiss()
+                                showMemoryDetails(pointId)
+                            } catch (e: Exception) {
+                                Timber.e(e, "Error deleting media")
+                                showMessage("Ошибка при удалении: ${e.message}")
+                            }
+                        }
                     }
-                )
+                ).also { dialog ->
+                    currentDialog = dialog
+                }
             } catch (e: Exception) {
                 showMessage("Ошибка загрузки записей: ${e.message}")
             }
         }
+    }
+
+    private fun getMediaTypeName(type: String): String = when (type) {
+        MemoryEntry.TYPE_PHOTO -> "Фото"
+        MemoryEntry.TYPE_AUDIO -> "Аудио"
+        MemoryEntry.TYPE_VIDEO -> "Видео"
+        else -> "Файл"
     }
 
     private fun showEditMemoryDialog(memoryPoint: MemoryPoint) {
@@ -310,11 +348,11 @@ class DiaryFragment : Fragment() {
                         savedCount++
 
                         withContext(Dispatchers.Main) {
-                            showMessage("${mediaTypeName(media.type)} добавлено")
+                            showMessage("${getMediaTypeName(media.type)} добавлено")
                         }
                     } else {
                         withContext(Dispatchers.Main) {
-                            showMessage("Файл ${mediaTypeName(media.type)} поврежден и не добавлен")
+                            showMessage("Файл ${getMediaTypeName(media.type)} поврежден и не добавлен")
                         }
                         if (file.exists()) file.delete()
                     }
@@ -325,7 +363,6 @@ class DiaryFragment : Fragment() {
                     if (savedCount > 0) {
                         showMessage("Сохранено $savedCount файлов")
                     }
-                    Timber.d("Saved pending media and refreshed diary for pointId=$pointId")
                     viewModel.loadMemories()
                 }
             } catch (e: Exception) {
@@ -412,7 +449,6 @@ class DiaryFragment : Fragment() {
             if (file.exists() && file.length() > 1024) {
                 val pointId = editingPointId
                 if (pointId != null) {
-                    // Режим редактирования - сохраняем сразу через репозиторий
                     val mainActivity = requireActivity() as MainActivity
                     val entry = MemoryEntry(
                         memoryPointId = pointId,
@@ -433,7 +469,6 @@ class DiaryFragment : Fragment() {
                         }
                     }
                 } else {
-                    // Режим создания - добавляем в pending
                     pendingMedia.add(DiaryPendingMedia(filePath, MemoryEntry.TYPE_AUDIO, file.length(), durationSec))
                     showMessage("Аудио добавлено")
                 }
@@ -520,7 +555,6 @@ class DiaryFragment : Fragment() {
 
         val pointId = editingPointId
         if (pointId != null) {
-            // Режим редактирования - сохраняем сразу через репозиторий
             val mainActivity = requireActivity() as MainActivity
             val entry = MemoryEntry(
                 memoryPointId = pointId,
@@ -536,14 +570,13 @@ class DiaryFragment : Fragment() {
             viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
                 mainActivity.memoryRepo.addMemoryEntry(entry)
                 withContext(Dispatchers.Main) {
-                    showMessage(mediaTypeName(type) + " сохранено")
+                    showMessage(getMediaTypeName(type) + " сохранено")
                     viewModel.loadMemories()
                 }
             }
         } else {
-            // Режим создания - добавляем в pending
             pendingMedia.add(DiaryPendingMedia(file.absolutePath, type, file.length()))
-            showMessage(mediaTypeName(type) + " добавлено")
+            showMessage(getMediaTypeName(type) + " добавлено")
         }
     }
 
@@ -557,7 +590,6 @@ class DiaryFragment : Fragment() {
 
             val pointId = editingPointId
             if (pointId != null) {
-                // Режим редактирования - сохраняем сразу через репозиторий
                 val mainActivity = requireActivity() as MainActivity
                 val entry = MemoryEntry(
                     memoryPointId = pointId,
@@ -573,14 +605,13 @@ class DiaryFragment : Fragment() {
                 viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
                     mainActivity.memoryRepo.addMemoryEntry(entry)
                     withContext(Dispatchers.Main) {
-                        showMessage(mediaTypeName(type) + " сохранено")
+                        showMessage(getMediaTypeName(type) + " сохранено")
                         viewModel.loadMemories()
                     }
                 }
             } else {
-                // Режим создания - добавляем в pending
                 pendingMedia.add(DiaryPendingMedia(file.absolutePath, type, file.length()))
-                showMessage(mediaTypeName(type) + " добавлено")
+                showMessage(getMediaTypeName(type) + " добавлено")
             }
         } catch (e: Exception) {
             Timber.e(e, "Error handling media result")
@@ -606,13 +637,6 @@ class DiaryFragment : Fragment() {
         val dir = File(requireContext().filesDir, "media")
         if (!dir.exists()) dir.mkdirs()
         return File(dir, "${prefix}_${timestamp}${ext}")
-    }
-
-    private fun mediaTypeName(type: String): String = when (type) {
-        MemoryEntry.TYPE_PHOTO -> "Фото"
-        MemoryEntry.TYPE_AUDIO -> "Аудио"
-        MemoryEntry.TYPE_VIDEO -> "Видео"
-        else -> "Файл"
     }
 
     private fun showMessage(message: String) {

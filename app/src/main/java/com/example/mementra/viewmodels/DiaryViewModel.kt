@@ -230,7 +230,21 @@ class DiaryViewModel(
             }
         }
     }
-
+    fun deleteMediaEntry(entryId: Long) {
+        viewModelScope.launch {
+            try {
+                Timber.d("Deleting media entry with ID: $entryId")
+                val success = repository.deleteMemoryEntry(entryId)
+                if (success) {
+                    Timber.d("Media entry deleted successfully: $entryId")
+                } else {
+                    Timber.e("Failed to delete media entry: $entryId")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error deleting media entry")
+            }
+        }
+    }
     fun updateMemory(memoryPoint: MemoryPoint) {
         if (memoryPoint.title.isBlank()) {
             _message.value = "Введите название воспоминания"
