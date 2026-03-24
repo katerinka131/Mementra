@@ -53,7 +53,7 @@ class DiaryViewModel(
 
     // Все воспоминания
     private val _allMemories = MutableLiveData<List<MemoryPoint>>(emptyList())
-    
+
     // Отфильтрованные воспоминания
     private val _filteredMemories = MutableLiveData<List<MemoryPoint>>(emptyList())
     val filteredMemories: LiveData<List<MemoryPoint>> = _filteredMemories
@@ -78,15 +78,15 @@ class DiaryViewModel(
             try {
                 Timber.d("Loading memories for diary, userId: $userId")
                 _uiState.value = DiaryUiState.Loading
-                
+
                 val memories = repository.getMemoryPoints(userId)
                 _allMemories.value = memories
-                
+
                 Timber.i("Loaded ${memories.size} memories for diary")
-                
+
                 // Применяем текущий фильтр
                 applyFilter(_currentFilter.value ?: DiaryFilter())
-                
+
             } catch (e: Exception) {
                 Timber.e(e, "Error loading memories for diary")
                 _uiState.value = DiaryUiState.Error("Ошибка загрузки: ${e.message}")
@@ -102,28 +102,28 @@ class DiaryViewModel(
             try {
                 Timber.d("Applying filter: $filter")
                 _currentFilter.value = filter
-                
+
                 val allMemories = _allMemories.value ?: emptyList()
                 var filtered = allMemories.toList()
-                
+
                 // Фильтр по поисковому запросу
                 if (filter.searchQuery.isNotBlank()) {
                     filtered = filtered.filter { memory ->
                         memory.title.contains(filter.searchQuery, ignoreCase = true) ||
-                        memory.description?.contains(filter.searchQuery, ignoreCase = true) == true
+                                memory.description?.contains(filter.searchQuery, ignoreCase = true) == true
                     }
                 }
-                
+
                 // Фильтр по дате (от)
                 filter.dateFrom?.let { dateFrom ->
                     filtered = filtered.filter { it.visitDate >= dateFrom }
                 }
-                
+
                 // Фильтр по дате (до)
                 filter.dateTo?.let { dateTo ->
                     filtered = filtered.filter { it.visitDate <= dateTo }
                 }
-                
+
                 // Сортировка
                 filtered = when (filter.sortBy) {
                     SortType.DATE_DESC -> filtered.sortedByDescending { it.visitDate }
@@ -131,17 +131,17 @@ class DiaryViewModel(
                     SortType.TITLE_ASC -> filtered.sortedBy { it.title.lowercase() }
                     SortType.TITLE_DESC -> filtered.sortedByDescending { it.title.lowercase() }
                 }
-                
+
                 _filteredMemories.value = filtered
-                
+
                 if (filtered.isEmpty()) {
                     _uiState.value = DiaryUiState.Empty
                 } else {
                     _uiState.value = DiaryUiState.Success(filtered)
                 }
-                
+
                 Timber.i("Filter applied, ${filtered.size} memories match")
-                
+
             } catch (e: Exception) {
                 Timber.e(e, "Error applying filter")
                 _message.value = "Ошибка фильтрации: ${e.message}"
@@ -192,7 +192,7 @@ class DiaryViewModel(
             try {
                 Timber.d("Deleting memory: $pointId")
                 val success = repository.deleteMemoryPoint(pointId)
-                
+
                 if (success) {
                     Timber.i("Memory deleted successfully: $pointId")
                     loadMemories() // Перезагружаем список
@@ -211,15 +211,15 @@ class DiaryViewModel(
     /**
      * Переключить избранное
      */
-    fun toggleFavorite(pointId: Long, currentState: Boolean) {
+    fun toggleFavorite(pointId: Long, newFavoriteState: Boolean) {
         viewModelScope.launch {
             try {
-                val newState = !currentState
-                val success = repository.toggleFavorite(pointId, newState)
-                
+                // newFavoriteState - это уже новое состояние, которое мы хотим установить
+                val success = repository.toggleFavorite(pointId, newFavoriteState)
+
                 if (success) {
                     loadMemories()
-                    val msg = if (newState) "Добавлено в избранное" else "Убрано из избранного"
+                    val msg = if (newFavoriteState) "Добавлено в избранное" else "Убрано из избранного"
                     _message.value = msg
                 } else {
                     _message.value = "Ошибка при обновлении избранного"
@@ -230,6 +230,7 @@ class DiaryViewModel(
             }
         }
     }
+
     fun deleteMediaEntry(entryId: Long) {
         viewModelScope.launch {
             try {
@@ -245,6 +246,7 @@ class DiaryViewModel(
             }
         }
     }
+
     fun updateMemory(memoryPoint: MemoryPoint) {
         if (memoryPoint.title.isBlank()) {
             _message.value = "Введите название воспоминания"
@@ -279,7 +281,7 @@ class DiaryViewModel(
     fun getStatistics(): DiaryStatistics {
         val memories = _allMemories.value ?: emptyList()
         val favorites = memories.count { it.isFavorite }
-        
+
         return DiaryStatistics(
             totalMemories = memories.size,
             favoriteMemories = favorites,
@@ -298,4 +300,3 @@ data class DiaryStatistics(
     val oldestMemory: Long?,
     val newestMemory: Long?
 )
-

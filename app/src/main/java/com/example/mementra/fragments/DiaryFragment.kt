@@ -241,13 +241,19 @@ class DiaryFragment : Fragment() {
                     entries = entries,
                     onFavoriteToggle = { newState ->
                         viewModel.toggleFavorite(pointId, newState)
+                        // После изменения избранного обновляем данные в MapFragment через репозиторий
+                        // MapFragment автоматически обновится, так как он наблюдает за изменениями в репозитории
                     },
                     onEdit = { showEditMemoryDialog(memoryPoint) },
                     onDelete = {
                         MemoryDialogHelper.showDeleteConfirmationDialog(
                             context = requireContext(),
                             memoryTitle = memoryPoint.title,
-                            onConfirm = { viewModel.deleteMemory(pointId, memoryPoint.title) }
+                            onConfirm = {
+                                viewModel.deleteMemory(pointId, memoryPoint.title)
+                                // После удаления обновляем список
+                                viewModel.loadMemories()
+                            }
                         )
                     },
                     onMediaDelete = { entry ->
