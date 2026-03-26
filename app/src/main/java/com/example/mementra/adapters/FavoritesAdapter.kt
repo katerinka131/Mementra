@@ -18,11 +18,19 @@ class FavoritesAdapter(
     inner class FavoriteViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val tvTitle: TextView = itemView.findViewById(R.id.tvFavoriteTitle)
         private val tvDate: TextView = itemView.findViewById(R.id.tvFavoriteDate)
+        private val tvTags: TextView = itemView.findViewById(R.id.tvFavoriteTags)
         private val tvDescription: TextView = itemView.findViewById(R.id.tvFavoriteDescription)
 
         fun bind(memory: MemoryPoint) {
             tvTitle.text = memory.title
             tvDate.text = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(memory.visitDate))
+
+            if (memory.tags.isNotEmpty()) {
+                tvTags.text = memory.tags.joinToString(" · ") { it.name }
+                tvTags.visibility = View.VISIBLE
+            } else {
+                tvTags.visibility = View.GONE
+            }
 
             memory.description?.let { description ->
                 if (description.isNotBlank()) {

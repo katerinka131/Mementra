@@ -39,6 +39,15 @@
         android:textColor="?android:attr/textColorSecondary" android:layout_marginTop="4dp" />
 
     <TextView
+        android:id="@+id/tvFavoriteTags"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:textColor="?attr/colorPrimary"
+        android:visibility="gone"
+        android:layout_marginTop="4dp" />
+
+    <TextView
         android:id="@+id/tvFavoriteDescription"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

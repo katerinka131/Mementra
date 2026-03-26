@@ -252,6 +252,66 @@ MVVM: `LiveData` для списка точек и флагов UI, `SingleLiveE
 
 ### Схема Room Database (целевая / соответствует таблицам в файле)
 
+#### ER-диаграмма (связи)
+
+```mermaid
+erDiagram
+    users {
+        text user_id PK
+        int created_at
+        int last_active
+        text name
+        text settings
+    }
+
+    memory_points {
+        int point_id PK
+        text user_id FK
+        text title
+        text description
+        real latitude
+        real longitude
+        text address
+        int created_at
+        int visit_date
+        int is_favorite
+    }
+
+    memory_entries {
+        int entry_id PK
+        int memory_point_id FK
+        text type
+        text content
+        int created_at
+        int order_index
+        text file_path
+        int file_size
+        text thumbnail_path
+        int duration
+    }
+
+    tags {
+        int tag_id PK
+        text user_id FK
+        text tag_name
+        text tag_color
+        text tag_icon
+    }
+
+    memory_point_tags {
+        int memory_point_id FK
+        int tag_id FK
+    }
+
+    users ||--o{ memory_points : "владеет"
+    users ||--o{ tags : "владеет"
+    memory_points ||--o{ memory_entries : "содержит"
+    memory_points ||--o{ memory_point_tags : ""
+    tags ||--o{ memory_point_tags : ""
+```
+
+> В актуальной базе у `memory_points` может быть дополнительный столбец `emoji` (иконка маркера на карте), который есть в миграциях SQLite / legacy-слое, но не отражён в приведённой Room-сущности — при полном выравнивании схемы его стоит добавить в entity.
+
 ```sql
 -- Пользователи
 users (

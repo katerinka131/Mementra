@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mementra.database.MemoryPointRepository
 import com.example.mementra.database.models.MemoryPoint
+import com.example.mementra.database.models.MemoryTag
 import com.example.mementra.utils.SingleLiveEvent
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -29,14 +30,16 @@ data class DiaryFilter(
     val searchQuery: String = "",
     val sortBy: SortType = SortType.DATE_DESC,
     val dateFrom: Long? = null,
-    val dateTo: Long? = null
+    val dateTo: Long? = null,
+    val filterTagId: Long? = null
 )
 
 enum class SortType {
-    DATE_DESC,      // Сначала новые
-    DATE_ASC,       // Сначала старые
-    TITLE_ASC,      // По алфавиту A-Z
-    TITLE_DESC      // По алфавиту Z-A
+    DATE_DESC,
+    DATE_ASC,
+    TITLE_ASC,
+    TITLE_DESC,
+    TAG_NAME_ASC
 }
 
 /**
@@ -62,6 +65,9 @@ class DiaryViewModel(
     private val _currentFilter = MutableLiveData(DiaryFilter())
     val currentFilter: LiveData<DiaryFilter> = _currentFilter
 
+    private val _userTags = MutableLiveData<List<MemoryTag>>(emptyList())
+    val userTags: LiveData<List<MemoryTag>> = _userTags
+
     // Сообщения (одноразовые) - используем SingleLiveEvent для предотвращения повторной отправки
     private val _message = SingleLiveEvent<String>()
     val message: LiveData<String> = _message
@@ -81,6 +87,7 @@ class DiaryViewModel(
 
                 val memories = repository.getMemoryPoints(userId)
                 _allMemories.value = memories
+                _userTags.value = repository.getTagsForUser(userId)
 
                 Timber.i("Loaded ${memories.size} memories for diary")
 
@@ -124,12 +131,21 @@ class DiaryViewModel(
                     filtered = filtered.filter { it.visitDate <= dateTo }
                 }
 
-                // Сортировка
+                filter.filterTagId?.let { tagId ->
+                    filtered = filtered.filter { m -> m.tags.any { it.tagId == tagId } }
+                }
+
                 filtered = when (filter.sortBy) {
                     SortType.DATE_DESC -> filtered.sortedByDescending { it.visitDate }
                     SortType.DATE_ASC -> filtered.sortedBy { it.visitDate }
                     SortType.TITLE_ASC -> filtered.sortedBy { it.title.lowercase() }
                     SortType.TITLE_DESC -> filtered.sortedByDescending { it.title.lowercase() }
+                    SortType.TAG_NAME_ASC -> filtered.sortedWith(
+                        compareBy(
+                            { it.tags.minOfOrNull { t -> t.name.lowercase(Locale.getDefault()) } ?: "\uFFFF" },
+                            { it.title.lowercase(Locale.getDefault()) }
+                        )
+                    )
                 }
 
                 _filteredMemories.value = filtered
@@ -182,6 +198,11 @@ class DiaryViewModel(
     fun resetFilters() {
         applyFilter(DiaryFilter())
         _message.value = "Фильтры сброшены"
+    }
+
+    fun setTagFilter(tagId: Long?) {
+        val base = _currentFilter.value ?: DiaryFilter()
+        applyFilter(base.copy(filterTagId = tagId))
     }
 
     /**

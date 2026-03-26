@@ -245,28 +245,47 @@ class FavoritesFragment : Fragment() {
         editingPointId = memoryPoint.pointId
         pendingMedia.clear()
 
-        MemoryDialogHelper.showEditMemoryDialog(
-            context = requireContext(),
-            memoryPoint = memoryPoint,
-            onSave = { title, description, emoji ->
-                val updatedPoint = memoryPoint.copy(
-                    title = title,
-                    description = description,
-                    emoji = emoji,
-                    visitDate = System.currentTimeMillis()
-                )
-                viewModel.updateMemory(updatedPoint)
-                savePendingMedia(memoryPoint.pointId)
-                editingPointId = null
-            },
-            onCancel = {
-                pendingMedia.clear()
-                editingPointId = null
-            },
-            onAddPhoto = { showPhotoOptions() },
-            onAddVoice = { showAudioOptions() },
-            onAddVideo = { showVideoOptions() }
-        )
+        val mainActivity = requireActivity() as MainActivity
+        val repo = mainActivity.memoryRepo
+        val userId = mainActivity.userId
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            val tags = withContext(Dispatchers.IO) { repo.getTagsForUser(userId) }
+            MemoryDialogHelper.showEditMemoryDialog(
+                context = requireContext(),
+                memoryPoint = memoryPoint,
+                availableTags = tags,
+                onRequestNewTag = { name, done ->
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        val created = try {
+                            withContext(Dispatchers.IO) { repo.getOrCreateTag(userId, name) }
+                        } catch (_: Exception) {
+                            null
+                        }
+                        withContext(Dispatchers.Main) { done(created) }
+                    }
+                },
+                onSave = { title, description, emoji, selectedTags ->
+                    val updatedPoint = memoryPoint.copy(
+                        title = title,
+                        description = description,
+                        emoji = emoji,
+                        visitDate = System.currentTimeMillis(),
+                        tags = selectedTags
+                    )
+                    viewModel.updateMemory(updatedPoint)
+                    savePendingMedia(memoryPoint.pointId)
+                    editingPointId = null
+                },
+                onCancel = {
+                    pendingMedia.clear()
+                    editingPointId = null
+                },
+                onAddPhoto = { showPhotoOptions() },
+                onAddVoice = { showAudioOptions() },
+                onAddVideo = { showVideoOptions() }
+            )
+        }
     }
 
     private fun savePendingMedia(pointId: Long) {

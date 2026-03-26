@@ -8,6 +8,7 @@ import kotlinx.coroutines.launch
 import com.example.mementra.database.MemoryPointRepository
 import com.example.mementra.database.models.MemoryEntry
 import com.example.mementra.database.models.MemoryPoint
+import com.example.mementra.database.models.MemoryTag
 import com.example.mementra.utils.SingleLiveEvent
 import org.osmdroid.util.GeoPoint
 import timber.log.Timber
@@ -73,7 +74,8 @@ class MapViewModel(
         description: String,
         latitude: Double,
         longitude: Double,
-        emoji: String = MemoryPoint.DEFAULT_EMOJI
+        emoji: String = MemoryPoint.DEFAULT_EMOJI,
+        selectedTags: List<MemoryTag> = emptyList()
     ) {
         if (title.isBlank()) {
             Timber.w("Attempted to add memory point with blank title")
@@ -100,6 +102,8 @@ class MapViewModel(
 
                 if (pointId != -1L) {
                     Timber.i("Memory point added successfully with ID: $pointId")
+
+                    repository.replaceMemoryPointTags(pointId, selectedTags.map { it.tagId })
 
                     if (description.isNotBlank()) {
                         val textEntry = MemoryEntry(
