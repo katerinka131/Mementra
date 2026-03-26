@@ -2,8 +2,10 @@ package com.example.mementra.database
 
 import android.content.ContentValues
 import android.database.Cursor
+import android.database.sqlite.SQLiteDatabase
 import com.example.mementra.database.models.MemoryEntry
 import com.example.mementra.database.models.MemoryPoint
+import com.example.mementra.database.models.MemoryTag
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -18,6 +20,12 @@ import timber.log.Timber
     level = DeprecationLevel.WARNING
 )
 class MemoryPointRepository(private val databaseHelper: AppDatabaseHelper) {
+
+    companion object {
+        private val NEW_TAG_COLORS = listOf(
+            "#6750A4", "#00695C", "#1565C0", "#6A1B9A", "#C62828", "#2E7D32", "#BF360C", "#455A64"
+        )
+    }
 
     private fun cursorToMemoryPoint(cursor: Cursor): MemoryPoint {
         val emojiIndex = cursor.getColumnIndex(AppDatabaseHelper.COLUMN_EMOJI)
@@ -70,7 +78,124 @@ class MemoryPointRepository(private val databaseHelper: AppDatabaseHelper) {
                 points.add(cursorToMemoryPoint(it))
             }
         }
-        points
+        attachTagsToPoints(db, points)
+    }
+
+    private fun loadTagsForPoints(db: SQLiteDatabase, pointIds: List<Long>): Map<Long, List<MemoryTag>> {
+        if (pointIds.isEmpty()) return emptyMap()
+        val map = pointIds.associateWith { mutableListOf<MemoryTag>() }.toMutableMap()
+        val placeholders = pointIds.joinToString(",") { "?" }
+        val sql = """
+            SELECT mpt.${AppDatabaseHelper.COLUMN_MEMORY_POINT_ID},
+                   t.${AppDatabaseHelper.COLUMN_TAG_ID},
+                   t.${AppDatabaseHelper.COLUMN_USER_ID},
+                   t.${AppDatabaseHelper.COLUMN_TAG_NAME},
+                   t.${AppDatabaseHelper.COLUMN_TAG_COLOR},
+                   t.${AppDatabaseHelper.COLUMN_TAG_ICON}
+            FROM ${AppDatabaseHelper.TABLE_MEMORY_POINT_TAGS} mpt
+            INNER JOIN ${AppDatabaseHelper.TABLE_TAGS} t
+                ON mpt.${AppDatabaseHelper.COLUMN_TAG_ID} = t.${AppDatabaseHelper.COLUMN_TAG_ID}
+            WHERE mpt.${AppDatabaseHelper.COLUMN_MEMORY_POINT_ID} IN ($placeholders)
+        """.trimIndent().replace("\n", " ")
+        val args = pointIds.map { it.toString() }.toTypedArray()
+        db.rawQuery(sql, args).use { c ->
+            val idxPt = c.getColumnIndex(AppDatabaseHelper.COLUMN_MEMORY_POINT_ID)
+            val idxTagId = c.getColumnIndex(AppDatabaseHelper.COLUMN_TAG_ID)
+            val idxUid = c.getColumnIndex(AppDatabaseHelper.COLUMN_USER_ID)
+            val idxName = c.getColumnIndex(AppDatabaseHelper.COLUMN_TAG_NAME)
+            val idxColor = c.getColumnIndex(AppDatabaseHelper.COLUMN_TAG_COLOR)
+            val idxIcon = c.getColumnIndex(AppDatabaseHelper.COLUMN_TAG_ICON)
+            while (c.moveToNext()) {
+                val pid = c.getLong(idxPt)
+                val tag = MemoryTag(
+                    tagId = c.getLong(idxTagId),
+                    userId = c.getString(idxUid),
+                    name = c.getString(idxName),
+                    colorHex = c.getString(idxColor),
+                    icon = if (idxIcon >= 0 && !c.isNull(idxIcon)) c.getString(idxIcon) else null
+                )
+                map[pid]?.add(tag)
+            }
+        }
+        return map.mapValues { (_, v) -> v.toList() }
+    }
+
+    private fun attachTagsToPoints(db: SQLiteDatabase, points: List<MemoryPoint>): List<MemoryPoint> {
+        val tagMap = loadTagsForPoints(db, points.map { it.pointId })
+        return points.map { p -> p.copy(tags = tagMap[p.pointId] ?: emptyList()) }
+    }
+
+    suspend fun getTagsForUser(userId: String): List<MemoryTag> = withContext(Dispatchers.IO) {
+        val db = databaseHelper.readableDatabase
+        val out = mutableListOf<MemoryTag>()
+        db.query(
+            AppDatabaseHelper.TABLE_TAGS,
+            null,
+            "${AppDatabaseHelper.COLUMN_USER_ID} = ?",
+            arrayOf(userId),
+            null, null,
+            "${AppDatabaseHelper.COLUMN_TAG_NAME} COLLATE NOCASE ASC"
+        ).use { c ->
+            while (c.moveToNext()) {
+                out.add(cursorRowToMemoryTag(c))
+            }
+        }
+        out
+    }
+
+    suspend fun getOrCreateTag(userId: String, name: String): MemoryTag = withContext(Dispatchers.IO) {
+        val trimmed = name.trim()
+        require(trimmed.isNotEmpty()) { "Пустое имя тега" }
+        val db = databaseHelper.writableDatabase
+        db.query(
+            AppDatabaseHelper.TABLE_TAGS,
+            null,
+            "${AppDatabaseHelper.COLUMN_USER_ID} = ? AND LOWER(${AppDatabaseHelper.COLUMN_TAG_NAME}) = LOWER(?)",
+            arrayOf(userId, trimmed),
+            null, null, null,
+            "1"
+        ).use { c ->
+            if (c.moveToFirst()) return@withContext cursorRowToMemoryTag(c)
+        }
+        val color = NEW_TAG_COLORS[kotlin.math.abs(trimmed.hashCode()) % NEW_TAG_COLORS.size]
+        val values = ContentValues().apply {
+            put(AppDatabaseHelper.COLUMN_USER_ID, userId)
+            put(AppDatabaseHelper.COLUMN_TAG_NAME, trimmed)
+            put(AppDatabaseHelper.COLUMN_TAG_COLOR, color)
+        }
+        val id = db.insert(AppDatabaseHelper.TABLE_TAGS, null, values)
+        MemoryTag(tagId = id, userId = userId, name = trimmed, colorHex = color, icon = null)
+    }
+
+    private fun cursorRowToMemoryTag(c: Cursor): MemoryTag {
+        val iconIdx = c.getColumnIndex(AppDatabaseHelper.COLUMN_TAG_ICON)
+        return MemoryTag(
+            tagId = c.getLong(c.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_TAG_ID)),
+            userId = c.getString(c.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_USER_ID)),
+            name = c.getString(c.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_TAG_NAME)),
+            colorHex = c.getString(c.getColumnIndexOrThrow(AppDatabaseHelper.COLUMN_TAG_COLOR)),
+            icon = if (iconIdx >= 0 && !c.isNull(iconIdx)) c.getString(iconIdx) else null
+        )
+    }
+
+    private suspend fun replacePointTags(pointId: Long, tagIds: List<Long>) = withContext(Dispatchers.IO) {
+        val db = databaseHelper.writableDatabase
+        db.delete(
+            AppDatabaseHelper.TABLE_MEMORY_POINT_TAGS,
+            "${AppDatabaseHelper.COLUMN_MEMORY_POINT_ID} = ?",
+            arrayOf(pointId.toString())
+        )
+        for (tagId in tagIds.distinct()) {
+            val cv = ContentValues().apply {
+                put(AppDatabaseHelper.COLUMN_MEMORY_POINT_ID, pointId)
+                put(AppDatabaseHelper.COLUMN_TAG_ID, tagId)
+            }
+            db.insert(AppDatabaseHelper.TABLE_MEMORY_POINT_TAGS, null, cv)
+        }
+    }
+
+    suspend fun replaceMemoryPointTags(pointId: Long, tagIds: List<Long>) {
+        replacePointTags(pointId, tagIds)
     }
 
     // Добавить запись к точке (асинхронно)
@@ -135,12 +260,16 @@ class MemoryPointRepository(private val databaseHelper: AppDatabaseHelper) {
             put(AppDatabaseHelper.COLUMN_IS_FAVORITE, if (memoryPoint.isFavorite) 1 else 0)
             put(AppDatabaseHelper.COLUMN_EMOJI, memoryPoint.emoji)
         }
-        db.update(
+        val ok = db.update(
             AppDatabaseHelper.TABLE_MEMORY_POINTS,
             values,
             "${AppDatabaseHelper.COLUMN_POINT_ID} = ?",
             arrayOf(memoryPoint.pointId.toString())
         ) > 0
+        if (ok) {
+            replacePointTags(memoryPoint.pointId, memoryPoint.tags.map { it.tagId })
+        }
+        ok
     }
 
     // Получить избранные воспоминания (асинхронно)
@@ -160,7 +289,7 @@ class MemoryPointRepository(private val databaseHelper: AppDatabaseHelper) {
                 points.add(cursorToMemoryPoint(it))
             }
         }
-        points
+        attachTagsToPoints(db, points)
     }
 
     // Переключить избранное (асинхронно)

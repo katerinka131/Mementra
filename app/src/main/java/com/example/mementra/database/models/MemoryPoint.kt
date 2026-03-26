@@ -13,7 +13,8 @@ data class MemoryPoint(
     val address: String? = null,
     val visitDate: Long,
     val isFavorite: Boolean = false,
-    val emoji: String = DEFAULT_EMOJI
+    val emoji: String = DEFAULT_EMOJI,
+    val tags: List<MemoryTag> = emptyList()
 ) {
     companion object {
         const val DEFAULT_EMOJI = "📍"

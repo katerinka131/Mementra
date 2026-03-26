@@ -3,8 +3,10 @@ package com.example.mementra.utils
 import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -13,13 +15,17 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.example.mementra.R
 import com.example.mementra.database.models.MemoryEntry
 import com.example.mementra.database.models.MemoryPoint
+import com.example.mementra.database.models.MemoryTag
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
 import com.google.android.material.textfield.TextInputEditText
 import java.io.File
 import java.text.SimpleDateFormat
@@ -29,7 +35,10 @@ object MemoryDialogHelper {
 
     fun showAddMemoryDialog(
         context: Context,
-        onSave: (title: String, description: String, emoji: String) -> Unit,
+        availableTags: List<MemoryTag> = emptyList(),
+        initialSelectedTags: List<MemoryTag> = emptyList(),
+        onRequestNewTag: (String, (MemoryTag?) -> Unit) -> Unit = { _, done -> done(null) },
+        onSave: (title: String, description: String, emoji: String, selectedTags: List<MemoryTag>) -> Unit,
         onCancel: () -> Unit,
         onAddPhoto: () -> Unit = {},
         onAddVoice: () -> Unit = {},
@@ -46,9 +55,20 @@ object MemoryDialogHelper {
         val btnCancel = dialogView.findViewById<MaterialButton>(R.id.btnCancel)
         val btnSave = dialogView.findViewById<MaterialButton>(R.id.btnSave)
         val emojiContainer = dialogView.findViewById<LinearLayout>(R.id.emojiContainer)
+        val tagChipGroup = dialogView.findViewById<ChipGroup>(R.id.tagChipGroup)
+        val btnAddTag = dialogView.findViewById<MaterialButton>(R.id.btnAddTag)
 
         configureEditText(etTitle)
         configureEditText(etDescription)
+
+        val tagList = availableTags.toMutableList().apply {
+            sortBy { it.name.lowercase(Locale.getDefault()) }
+        }
+        val getSelectedTags = setupMemoryTagChips(
+            context, tagChipGroup, btnAddTag, tagList,
+            initialSelectedTags.map { it.tagId }.toSet(),
+            onRequestNewTag
+        )
 
         var selectedEmoji = MemoryPoint.DEFAULT_EMOJI
         setupEmojiPicker(context, emojiContainer, selectedEmoji) { emoji ->
@@ -67,7 +87,7 @@ object MemoryDialogHelper {
         btnSave.setOnClickListener {
             val title = etTitle.text.toString()
             val description = etDescription.text.toString()
-            onSave(title, description, selectedEmoji)
+            onSave(title, description, selectedEmoji, getSelectedTags())
             dialog.dismiss()
         }
 
@@ -80,7 +100,9 @@ object MemoryDialogHelper {
     fun showEditMemoryDialog(
         context: Context,
         memoryPoint: MemoryPoint,
-        onSave: (title: String, description: String, emoji: String) -> Unit,
+        availableTags: List<MemoryTag>,
+        onRequestNewTag: (String, (MemoryTag?) -> Unit) -> Unit,
+        onSave: (title: String, description: String, emoji: String, selectedTags: List<MemoryTag>) -> Unit,
         onCancel: () -> Unit,
         onAddPhoto: () -> Unit = {},
         onAddVoice: () -> Unit = {},
@@ -98,6 +120,8 @@ object MemoryDialogHelper {
         val btnCancel = dialogView.findViewById<MaterialButton>(R.id.btnCancel)
         val btnSave = dialogView.findViewById<MaterialButton>(R.id.btnSave)
         val emojiContainer = dialogView.findViewById<LinearLayout>(R.id.emojiContainer)
+        val tagChipGroup = dialogView.findViewById<ChipGroup>(R.id.tagChipGroup)
+        val btnAddTag = dialogView.findViewById<MaterialButton>(R.id.btnAddTag)
 
         tvDialogTitle.text = "Редактировать воспоминание"
         btnSave.text = "Обновить"
@@ -107,6 +131,13 @@ object MemoryDialogHelper {
 
         configureEditText(etTitle)
         configureEditText(etDescription)
+
+        val merged = (availableTags + memoryPoint.tags).distinctBy { it.tagId }.toMutableList()
+        merged.sortBy { it.name.lowercase(Locale.getDefault()) }
+        val getSelectedTags = setupMemoryTagChips(
+            context, tagChipGroup, btnAddTag, merged,
+            memoryPoint.tags.map { it.tagId }.toSet(), onRequestNewTag
+        )
 
         var selectedEmoji = memoryPoint.emoji
         setupEmojiPicker(context, emojiContainer, selectedEmoji) { emoji ->
@@ -125,12 +156,75 @@ object MemoryDialogHelper {
         btnSave.setOnClickListener {
             val title = etTitle.text.toString()
             val description = etDescription.text.toString()
-            onSave(title, description, selectedEmoji)
+            onSave(title, description, selectedEmoji, getSelectedTags())
             dialog.dismiss()
         }
 
         dialog.show()
         setupKeyboard(context, dialog, etTitle)
+    }
+
+    private fun setupMemoryTagChips(
+        context: Context,
+        chipGroup: ChipGroup,
+        btnAddTag: MaterialButton,
+        tagList: MutableList<MemoryTag>,
+        initialSelectedIds: Set<Long>,
+        onRequestNewTag: (String, (MemoryTag?) -> Unit) -> Unit
+    ): () -> List<MemoryTag> {
+        val selectedIds = initialSelectedIds.toMutableSet()
+
+        fun rebuildChips() {
+            chipGroup.removeAllViews()
+            for (tag in tagList) {
+                val chip = Chip(context).apply {
+                    text = tag.name
+                    isCheckable = true
+                    isChecked = tag.tagId in selectedIds
+                    try {
+                        val c = Color.parseColor(tag.colorHex)
+                        chipStrokeWidth = resources.displayMetrics.density * 2f
+                        chipStrokeColor = ColorStateList.valueOf(c)
+                        setTextColor(c)
+                    } catch (_: Exception) { }
+                }
+                chip.setOnCheckedChangeListener { _, checked ->
+                    if (checked) selectedIds.add(tag.tagId) else selectedIds.remove(tag.tagId)
+                }
+                chipGroup.addView(chip)
+            }
+        }
+
+        rebuildChips()
+
+        btnAddTag.setOnClickListener {
+            val input = EditText(context).apply {
+                hint = "Название тега"
+                val pad = (24 * resources.displayMetrics.density).toInt()
+                setPadding(pad, pad, pad, pad)
+            }
+            AlertDialog.Builder(context)
+                .setTitle("Новый тег")
+                .setView(input)
+                .setPositiveButton("Создать") { _, _ ->
+                    val name = input.text?.toString()?.trim().orEmpty()
+                    if (name.isEmpty()) return@setPositiveButton
+                    onRequestNewTag(name) { newTag ->
+                        if (newTag != null) {
+                            if (tagList.none { it.tagId == newTag.tagId }) {
+                                tagList.add(newTag)
+                                tagList.sortBy { it.name.lowercase(Locale.getDefault()) }
+                            }
+                            selectedIds.add(newTag.tagId)
+                            rebuildChips()
+                        }
+                    }
+                }
+                .setNegativeButton("Отмена", null)
+                .show()
+        }
+
+        return { tagList.filter { it.tagId in selectedIds } }
     }
 
     fun showMemoryDetailsDialog(
@@ -149,6 +243,7 @@ object MemoryDialogHelper {
         val tvDescription = dialogView.findViewById<TextView>(R.id.tvDescription)
         val tvDate = dialogView.findViewById<TextView>(R.id.tvDate)
         val tvLocation = dialogView.findViewById<TextView>(R.id.tvLocation)
+        val tvMemoryTags = dialogView.findViewById<TextView>(R.id.tvMemoryTags)
         val mediaContainer = dialogView.findViewById<LinearLayout>(R.id.mediaContainer)
         val btnFavorite = dialogView.findViewById<android.widget.ImageButton>(R.id.btnFavorite)
         val btnEdit = dialogView.findViewById<android.widget.Button>(R.id.btnEdit)
@@ -159,6 +254,13 @@ object MemoryDialogHelper {
         tvDescription.text = memoryPoint.description ?: "Нет описания"
         tvDate.text = "Дата: ${SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(memoryPoint.visitDate))}"
         tvLocation.text = "Координаты: ${"%.6f".format(memoryPoint.latitude)}, ${"%.6f".format(memoryPoint.longitude)}"
+
+        if (memoryPoint.tags.isEmpty()) {
+            tvMemoryTags.visibility = View.GONE
+        } else {
+            tvMemoryTags.visibility = View.VISIBLE
+            tvMemoryTags.text = "Теги: ${memoryPoint.tags.joinToString(", ") { it.name }}"
+        }
 
         updateFavoriteIcon(btnFavorite, memoryPoint.isFavorite)
 

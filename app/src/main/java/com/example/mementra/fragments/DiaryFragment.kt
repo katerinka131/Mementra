@@ -132,6 +132,7 @@ class DiaryFragment : Fragment() {
         setupRecyclerView()
         setupSearchView()
         setupSortButton()
+        setupTagFilterButton()
         observeViewModel()
     }
 
@@ -166,12 +167,42 @@ class DiaryFragment : Fragment() {
         }
     }
 
+    private fun setupTagFilterButton() {
+        binding.btnTagFilter.setOnClickListener {
+            val tags = viewModel.userTags.value.orEmpty()
+            val labels = mutableListOf("Все теги")
+            val ids = mutableListOf<Long?>(null)
+            for (t in tags) {
+                labels.add(t.name)
+                ids.add(t.tagId)
+            }
+            android.app.AlertDialog.Builder(requireContext())
+                .setTitle("Фильтр по тегу")
+                .setItems(labels.toTypedArray()) { _, which ->
+                    viewModel.setTagFilter(ids[which])
+                    updateTagFilterButtonLabel()
+                }
+                .show()
+        }
+    }
+
+    private fun updateTagFilterButtonLabel() {
+        val tagId = viewModel.currentFilter.value?.filterTagId
+        if (tagId == null) {
+            binding.btnTagFilter.text = "Тег: все"
+        } else {
+            val name = viewModel.userTags.value?.find { it.tagId == tagId }?.name ?: "…"
+            binding.btnTagFilter.text = "Тег: $name"
+        }
+    }
+
     private fun showSortDialog() {
         val sortOptions = arrayOf(
             "Сначала новые",
             "Сначала старые",
             "По алфавиту (A-Z)",
-            "По алфавиту (Z-A)"
+            "По алфавиту (Z-A)",
+            "По тегу (А–Я)"
         )
 
         android.app.AlertDialog.Builder(requireContext())
@@ -182,6 +213,7 @@ class DiaryFragment : Fragment() {
                     1 -> SortType.DATE_ASC
                     2 -> SortType.TITLE_ASC
                     3 -> SortType.TITLE_DESC
+                    4 -> SortType.TAG_NAME_ASC
                     else -> SortType.DATE_DESC
                 }
                 viewModel.changeSorting(sortType)
@@ -220,6 +252,13 @@ class DiaryFragment : Fragment() {
 
         viewModel.message.observe(viewLifecycleOwner) { message ->
             message?.let { showMessage(it) }
+        }
+
+        viewModel.currentFilter.observe(viewLifecycleOwner) {
+            updateTagFilterButtonLabel()
+        }
+        viewModel.userTags.observe(viewLifecycleOwner) {
+            updateTagFilterButtonLabel()
         }
     }
 
@@ -301,28 +340,47 @@ class DiaryFragment : Fragment() {
         pendingMedia.clear()
         isSaving = false
 
-        MemoryDialogHelper.showEditMemoryDialog(
-            context = requireContext(),
-            memoryPoint = memoryPoint,
-            onSave = { title, description, emoji ->
-                val updatedPoint = memoryPoint.copy(
-                    title = title,
-                    description = description,
-                    emoji = emoji,
-                    visitDate = System.currentTimeMillis()
-                )
-                viewModel.updateMemory(updatedPoint)
-                savePendingMediaSequentially(memoryPoint.pointId)
-                editingPointId = null
-            },
-            onCancel = {
-                pendingMedia.clear()
-                editingPointId = null
-            },
-            onAddPhoto = { showPhotoOptions() },
-            onAddVoice = { showAudioOptions() },
-            onAddVideo = { showVideoOptions() }
-        )
+        val mainActivity = requireActivity() as MainActivity
+        val repo = mainActivity.memoryRepo
+        val userId = mainActivity.userId
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            val tags = withContext(Dispatchers.IO) { repo.getTagsForUser(userId) }
+            MemoryDialogHelper.showEditMemoryDialog(
+                context = requireContext(),
+                memoryPoint = memoryPoint,
+                availableTags = tags,
+                onRequestNewTag = { name, done ->
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        val created = try {
+                            withContext(Dispatchers.IO) { repo.getOrCreateTag(userId, name) }
+                        } catch (_: Exception) {
+                            null
+                        }
+                        withContext(Dispatchers.Main) { done(created) }
+                    }
+                },
+                onSave = { title, description, emoji, selectedTags ->
+                    val updatedPoint = memoryPoint.copy(
+                        title = title,
+                        description = description,
+                        emoji = emoji,
+                        visitDate = System.currentTimeMillis(),
+                        tags = selectedTags
+                    )
+                    viewModel.updateMemory(updatedPoint)
+                    savePendingMediaSequentially(memoryPoint.pointId)
+                    editingPointId = null
+                },
+                onCancel = {
+                    pendingMedia.clear()
+                    editingPointId = null
+                },
+                onAddPhoto = { showPhotoOptions() },
+                onAddVoice = { showAudioOptions() },
+                onAddVideo = { showVideoOptions() }
+            )
+        }
     }
 
     private fun savePendingMediaSequentially(pointId: Long) {

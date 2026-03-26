@@ -14,7 +14,6 @@ import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
 import com.example.mementra.MainActivity
 import com.example.mementra.database.models.MemoryEntry
 import com.example.mementra.database.models.MemoryPoint
@@ -330,29 +329,48 @@ class MapFragment : Fragment() {
         editingPointId = null
         isSaving = false
 
-        MemoryDialogHelper.showAddMemoryDialog(
-            context = requireContext(),
-            onSave = { title, description, emoji ->
-                selectedPoint?.let { point ->
-                    // Сохраняем точку
-                    viewModel.addMemoryPoint(
-                        title = title,
-                        description = description,
-                        latitude = point.latitude,
-                        longitude = point.longitude,
-                        emoji = emoji
-                    )
-                }
-                viewModel.cancelPointSelection()
-            },
-            onCancel = {
-                pendingMedia.clear()
-                viewModel.cancelPointSelection()
-            },
-            onAddPhoto = { showPhotoOptions() },
-            onAddVoice = { showAudioOptions() },
-            onAddVideo = { showVideoOptions() }
-        )
+        val mainActivity = requireActivity() as MainActivity
+        val repo = mainActivity.memoryRepo
+        val userId = mainActivity.userId
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            val tags = withContext(Dispatchers.IO) { repo.getTagsForUser(userId) }
+            MemoryDialogHelper.showAddMemoryDialog(
+                context = requireContext(),
+                availableTags = tags,
+                initialSelectedTags = emptyList(),
+                onRequestNewTag = { name, done ->
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        val created = try {
+                            withContext(Dispatchers.IO) { repo.getOrCreateTag(userId, name) }
+                        } catch (_: Exception) {
+                            null
+                        }
+                        withContext(Dispatchers.Main) { done(created) }
+                    }
+                },
+                onSave = { title, description, emoji, selectedTags ->
+                    selectedPoint?.let { point ->
+                        viewModel.addMemoryPoint(
+                            title = title,
+                            description = description,
+                            latitude = point.latitude,
+                            longitude = point.longitude,
+                            emoji = emoji,
+                            selectedTags = selectedTags
+                        )
+                    }
+                    viewModel.cancelPointSelection()
+                },
+                onCancel = {
+                    pendingMedia.clear()
+                    viewModel.cancelPointSelection()
+                },
+                onAddPhoto = { showPhotoOptions() },
+                onAddVoice = { showAudioOptions() },
+                onAddVideo = { showVideoOptions() }
+            )
+        }
     }
 
     private fun showMemoryDetails(pointId: Long) {
@@ -426,24 +444,43 @@ class MapFragment : Fragment() {
     private fun showEditMemoryDialog(memoryPoint: MemoryPoint) {
         editingPointId = memoryPoint.pointId
 
-        MemoryDialogHelper.showEditMemoryDialog(
-            context = requireContext(),
-            memoryPoint = memoryPoint,
-            onSave = { title, description, emoji ->
-                val updatedPoint = memoryPoint.copy(
-                    title = title,
-                    description = description,
-                    emoji = emoji,
-                    visitDate = System.currentTimeMillis()
-                )
-                viewModel.updateMemoryPoint(updatedPoint)
-                editingPointId = null
-            },
-            onCancel = { editingPointId = null },
-            onAddPhoto = { showPhotoOptions() },
-            onAddVoice = { showAudioOptions() },
-            onAddVideo = { showVideoOptions() }
-        )
+        val mainActivity = requireActivity() as MainActivity
+        val repo = mainActivity.memoryRepo
+        val userId = mainActivity.userId
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            val tags = withContext(Dispatchers.IO) { repo.getTagsForUser(userId) }
+            MemoryDialogHelper.showEditMemoryDialog(
+                context = requireContext(),
+                memoryPoint = memoryPoint,
+                availableTags = tags,
+                onRequestNewTag = { name, done ->
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        val created = try {
+                            withContext(Dispatchers.IO) { repo.getOrCreateTag(userId, name) }
+                        } catch (_: Exception) {
+                            null
+                        }
+                        withContext(Dispatchers.Main) { done(created) }
+                    }
+                },
+                onSave = { title, description, emoji, selectedTags ->
+                    val updatedPoint = memoryPoint.copy(
+                        title = title,
+                        description = description,
+                        emoji = emoji,
+                        visitDate = System.currentTimeMillis(),
+                        tags = selectedTags
+                    )
+                    viewModel.updateMemoryPoint(updatedPoint)
+                    editingPointId = null
+                },
+                onCancel = { editingPointId = null },
+                onAddPhoto = { showPhotoOptions() },
+                onAddVoice = { showAudioOptions() },
+                onAddVideo = { showVideoOptions() }
+            )
+        }
     }
 
     // --- Map markers ---

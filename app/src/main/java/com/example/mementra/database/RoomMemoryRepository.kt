@@ -193,7 +193,9 @@ class RoomMemoryRepository(
         longitude = longitude,
         address = address,
         visitDate = visitDate,
-        isFavorite = isFavorite
+        isFavorite = isFavorite,
+        emoji = MemoryPoint.DEFAULT_EMOJI,
+        tags = emptyList()
     )
     
     private fun MemoryEntryEntity.toMemoryEntry() = MemoryEntry(
