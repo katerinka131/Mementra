@@ -87,15 +87,19 @@
 - **Target SDK** - API 34 (Android 14)
 
 ### Архитектура
-- **MVVM** (Model-View-ViewModel) - чистая архитектура
-- **Repository Pattern** - слой доступа к данным
-- **LiveData** & **Flow** - реактивное программирование
-- **Coroutines** - асинхронные операции
+- **MVVM** на экранах карты, дневника и избранного (Fragment → ViewModel → репозиторий)
+- **Single Activity** + **Navigation Component** для основного потока; онбординг — отдельная `Activity`
+- **Repository** как абстракция данных (см. раздел «База данных» — сейчас в рантайме используется один из двух вариантов)
+- **LiveData** для состояния UI; **SingleLiveEvent** для одноразовых событий (например, на карте)
+- **Kotlin Coroutines** (`viewModelScope`, `lifecycleScope`) для фоновой работы
+- **View Binding** для разметки
+- Явного **DI** (Hilt/Koin) в проекте нет — зависимости собираются вручную (например, в `MainActivity`)
 
 ### База данных
-- **Room Database** - современная ORM для Android
-- **SQLite** - локальное хранение данных
-- Поддержка миграций и типобезопасных запросов
+- **SQLite** — один файл `mementra.db`, локальное хранение
+- В коде параллельно существуют **два стека доступа к тем же таблицам** (миграция на Room в процессе):
+  - **активный в рантайме:** `AppDatabaseHelper` (`SQLiteOpenHelper`) + **`MemoryPointRepository`** — им пользуются `MainActivity` и фабрики `ViewModel`;
+  - **подготовленный стек:** **Room** (`AppDatabase`, entity, DAO) + **`RoomMemoryRepository`** — готов к подключению вместо legacy-репозитория (см. `ROOM_MIGRATION_GUIDE.md`).
 
 ### UI/UX
 - **Material Design 3** - современный дизайн
@@ -158,46 +162,26 @@ cd Mementra
 ### Структура проекта
 
 ```
-app/src/main/java/
-├── com/example/mementra/
-│   ├── MainActivity.kt              # Главная Activity
-│   ├── MementraApplication.kt       # Application класс
-│   └── OnboardingActivity.kt        # Экран приветствия
+app/src/main/java/com/example/mementra/
+├── MainActivity.kt
+├── MementraApplication.kt
+├── OnboardingActivity.kt
+├── OnboardingAdapter.kt
 │
 ├── database/
-│   ├── entities/                    # Room Entity классы
-│   │   ├── UserEntity.kt
-│   │   ├── MemoryPointEntity.kt
-│   │   ├── MemoryEntryEntity.kt
-│   │   └── TagEntity.kt
-│   ├── dao/                         # Data Access Objects
-│   │   ├── UserDao.kt
-│   │   ├── MemoryPointDao.kt
-│   │   └── MemoryEntryDao.kt
-│   ├── models/                      # UI модели
-│   │   ├── MemoryPoint.kt
-│   │   └── MemoryEntry.kt
-│   ├── AppDatabase.kt               # Room Database
-│   ├── RoomMemoryRepository.kt      # Новый репозиторий
-│   ├── MemoryPointRepository.kt     # Старый репозиторий (deprecated)
-│   └── UserManager.kt               # Управление пользователями
+│   ├── entities/          # Room-сущности
+│   ├── dao/               # Room DAO
+│   ├── models/            # MemoryPoint, MemoryEntry (общие модели)
+│   ├── AppDatabase.kt     # Room + миграции
+│   ├── AppDatabaseHelper.kt   # SQLiteOpenHelper (legacy, рантайм)
+│   ├── MemoryPointRepository.kt  # репозиторий поверх Helper (рантайм)
+│   ├── RoomMemoryRepository.kt   # репозиторий поверх Room (подключение — TODO)
+│   └── UserManager.kt
 │
-├── fragments/                       # UI фрагменты
-│   ├── MapFragment.kt               # Карта
-│   ├── DiaryFragment.kt             # Дневник
-│   ├── FavoritesFragment.kt         # Избранное
-│   └── SettingsFragment.kt          # Настройки
-│
-├── viewmodels/                      # ViewModels
-│   ├── MapViewModel.kt
-│   ├── DiaryViewModel.kt
-│   ├── FavoritesViewModel.kt
-│   └── *ViewModelFactory.kt
-│
-└── utils/                           # Утилиты
-    ├── MemoryDialogHelper.kt        # Диалоги
-    ├── PermissionHelper.kt          # Разрешения
-    └── SingleLiveEvent.kt           # Одноразовые события
+├── fragments/
+├── viewmodels/            # + *ViewModelFactory.kt
+├── adapters/
+└── utils/
 ```
 
 ### Слои приложения
@@ -224,11 +208,49 @@ app/src/main/java/
 └─────────────────────────────────────┘
 ```
 
+### Структура пакетов (фактическая)
+
+Исходники лежат в `app/src/main/java/com/example/mementra/`:
+
+| Пакет / область | Назначение |
+|-----------------|------------|
+| `MainActivity`, `OnboardingActivity`, `MementraApplication` | Точка входа, навигация, тема, логирование (Timber) |
+| `fragments/` | UI: карта, дневник, избранное, настройки, запись аудио |
+| `viewmodels/` + `*Factory` | Состояние экранов, вызовы репозитория, события для UI |
+| `database/` | Репозитории, Room (`AppDatabase`, `dao/`, `entities/`), legacy `AppDatabaseHelper`, `UserManager` |
+| `database/models/` | Модели домена/UI (`MemoryPoint`, `MemoryEntry`), общие для слоёв |
+| `adapters/` | `RecyclerView` (списки дневника/избранного) |
+| `utils/` | Диалоги (`MemoryDialogHelper`), разрешения, уведомления, сетка медиа, `FileProvider`, `SingleLiveEvent` |
+
+### Паттерны по частям приложения
+
+**Карта (`MapFragment` + `MapViewModel`)**  
+MVVM: `LiveData` для списка точек и флагов UI, `SingleLiveEvent` для разовых событий (точка добавлена и т.д.). Работа с OSMDroid, маркерами и медиа через `Activity Result API` и `FileProvider`. Часть сценариев (диалоги добавления/деталей) вынесена в `MemoryDialogHelper`.
+
+**Дневник и избранное (`DiaryFragment`, `FavoritesFragment` + соответствующие `ViewModel`)**  
+Тот же MVVM + адаптер списка. Поиск, сортировка и обновление списка через `ViewModel` и корутины.
+
+**Настройки (`SettingsFragment`)**  
+В основном прямой UI + `SharedPreferences` (тема, уведомления), без отдельного `ViewModel`.
+
+**Онбординг**  
+Отдельная `Activity`, адаптер страниц (`OnboardingAdapter`), флаг завершения в `SharedPreferences`.
+
+**Данные**  
+Паттерн **Repository**: `MemoryPointRepository` инкапсулирует SQL-запросы к SQLite через `AppDatabaseHelper`. `RoomMemoryRepository` дублирует операции через Room-DAO для будущего переключения.
+
+**Вспомогательные объекты**  
+Статические/объектные утилиты (`MemoryDialogHelper`, `PermissionHelper`, `NotificationHelper`, `MediaGridHelper`) — упрощённый **Facade** / набор процедур над Android API, без отдельного use-case слоя.
+
 ---
 
 ## 🗄️ База данных
 
-### Схема Room Database
+### Два слоя доступа к одной БД
+
+Один файл SQLite (`mementra.db`), схема описана в Room-сущностях и поддерживается миграциями Room (например, `MIGRATION_2_3` в `AppDatabase`). **Сейчас UI и ViewModel получают данные через `MemoryPointRepository` + `SQLiteOpenHelper`**, а не через `RoomMemoryRepository`, пока не завершён полный перенос (см. комментарии `@Deprecated` у legacy-классов).
+
+### Схема Room Database (целевая / соответствует таблицам в файле)
 
 ```sql
 -- Пользователи
