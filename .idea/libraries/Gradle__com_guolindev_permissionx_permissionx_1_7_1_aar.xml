@@ -1,0 +1,15 @@
+<component name="libraryTable">
+  <library name="Gradle: com.guolindev.permissionx:permissionx:1.7.1@aar" external-system-id="GRADLE">
+    <CLASSES>
+      <root url="file://$USER_HOME$/.gradle/caches/8.9/transforms/a821fed89cbc7e6211c4741fdeb9a0e4/transformed/permissionx-1.7.1/res" />
+      <root url="jar://$USER_HOME$/.gradle/caches/8.9/transforms/a821fed89cbc7e6211c4741fdeb9a0e4/transformed/permissionx-1.7.1/jars/classes.jar!/" />
+      <root url="file://$USER_HOME$/.gradle/caches/8.9/transforms/a821fed89cbc7e6211c4741fdeb9a0e4/transformed/permissionx-1.7.1/AndroidManifest.xml" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/com.guolindev.permissionx/permissionx/1.7.1/874fc52db9305f84ae23d38b87e9d619d28afaad/permissionx-1.7.1-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/com.guolindev.permissionx/permissionx/1.7.1/b7de9ef6225551edec473945c2c84c97422aa599/permissionx-1.7.1-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

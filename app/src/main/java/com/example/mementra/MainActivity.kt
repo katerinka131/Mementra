@@ -1,5 +1,6 @@
 package com.example.mementra
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.navigation.fragment.NavHostFragment
@@ -8,6 +9,7 @@ import com.example.mementra.database.AppDatabaseHelper
 import com.example.mementra.database.MemoryPointRepository
 import com.example.mementra.database.UserManager
 import com.example.mementra.databinding.ActivityMainBinding
+import com.example.mementra.utils.NotificationHelper
 
 class MainActivity : AppCompatActivity() {
 
@@ -21,6 +23,13 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Проверяем, нужно ли показать onboarding
+        if (shouldShowOnboarding()) {
+            startOnboarding()
+            return
+        }
+
+        // Инициализация зависимостей
         userManager = UserManager(this)
         memoryRepository = MemoryPointRepository(AppDatabaseHelper(this))
 
@@ -28,9 +37,27 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         setupNavigation()
+        setupNotifications()
 
         // Обновляем время последней активности
         userManager.updateLastActive(userId)
+    }
+
+    /**
+     * Проверяет, нужно ли показать экран приветствия
+     */
+    private fun shouldShowOnboarding(): Boolean {
+        val prefs = getSharedPreferences("mementra_prefs", MODE_PRIVATE)
+        return !prefs.getBoolean("onboarding_completed", false)
+    }
+
+    /**
+     * Запускает экран приветствия
+     */
+    private fun startOnboarding() {
+        val intent = Intent(this, OnboardingActivity::class.java)
+        startActivity(intent)
+        finish()
     }
 
     private fun setupNavigation() {
@@ -43,5 +70,23 @@ class MainActivity : AppCompatActivity() {
 
         // Настраиваем нижнюю навигацию
         binding.bottomNavigation.setupWithNavController(navController)
+    }
+    
+    /**
+     * Настройка уведомлений при запуске приложения
+     */
+    private fun setupNotifications() {
+        // Создаем канал уведомлений
+        NotificationHelper.createNotificationChannel(this)
+        
+        // Если уведомления включены, планируем их
+        val prefs = getSharedPreferences("mementra_settings", MODE_PRIVATE)
+        val notificationsEnabled = prefs.getBoolean("notifications_enabled", true)
+        
+        if (notificationsEnabled) {
+            val hour = prefs.getInt("notification_hour", 20)
+            val minute = prefs.getInt("notification_minute", 0)
+            NotificationHelper.scheduleDailyNotification(this, hour, minute)
+        }
     }
 }
